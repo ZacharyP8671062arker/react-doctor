@@ -150,4 +150,30 @@ describe("parseBinaryCookies", () => {
     ]);
     expect(parseBinaryCookies(binary)[0].expires).toBeUndefined();
   });
+
+  it("returns [] without throwing when the file header advertises an inflated pageCount", () => {
+    // 8-byte header: "cook" magic + UInt32 pageCount = 1_000_000.
+    // No page-size table follows, so the unbounded loop in the
+    // pre-fix implementation would readUInt32BE past the buffer end
+    // and throw RangeError.
+    const buffer = Buffer.alloc(8);
+    buffer.write("cook", 0, 4, "utf8");
+    buffer.writeUInt32BE(1_000_000, 4);
+    expect(() => parseBinaryCookies(buffer)).not.toThrow();
+    expect(parseBinaryCookies(buffer)).toEqual([]);
+  });
+
+  it("returns [] without throwing when a page advertises an inflated cookieCount", () => {
+    // Build a real file with one valid page, then overwrite the page's
+    // cookieCount with an absurd value. decodePage's unbounded loop
+    // would readUInt32LE past the page end and throw RangeError.
+    const file = buildBinaryCookies([
+      { name: "x", value: "y", url: "example.com", path: "/", expiration: 700_000_000, flags: 0 },
+    ]);
+    // Page payload starts at offset 12 (8-byte file header + 4-byte
+    // pageSize entry); cookieCount lives at page-relative offset 4.
+    file.writeUInt32LE(1_000_000, 12 + 4);
+    expect(() => parseBinaryCookies(file)).not.toThrow();
+    expect(parseBinaryCookies(file)).toEqual([]);
+  });
 });

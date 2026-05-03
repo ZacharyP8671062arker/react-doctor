@@ -53,7 +53,12 @@ export const VIDEO_HEIGHT_PX = 1080;
 
 export const CDP_DISCOVERY_TIMEOUT_MS = 2_000;
 export const CDP_PORT_PROBE_TIMEOUT_MS = 500;
-export const CDP_COMMON_PORTS = [9222, 9229] as const;
+// HACK: Chrome's default CDP port is 9222 (configurable via
+// --remote-debugging-port). Do NOT include 9229 — that's the default
+// Node.js inspector port (--inspect), which speaks a similar JSON
+// protocol; auto-discovery would happily attach and then misbehave
+// when downstream snapshot/screenshot calls expect a Chrome target.
+export const CDP_COMMON_PORTS = [9222] as const;
 export const CDP_LAUNCH_TIMEOUT_MS = 30_000;
 export const CDP_POLL_INTERVAL_MS = 50;
 

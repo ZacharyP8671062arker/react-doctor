@@ -22,6 +22,15 @@ export const parseBinaryCookies = (buffer: Buffer): Cookie[] => {
   if (buffer.subarray(0, UINT32_SIZE_BYTES).toString("utf8") !== BINARY_COOKIE_MAGIC) return [];
 
   const pageCount = buffer.readUInt32BE(UINT32_SIZE_BYTES);
+  // HACK: bounds-check pageCount BEFORE iterating — a corrupted /
+  // truncated .binarycookies file with an inflated header would make
+  // readUInt32BE throw RangeError once cursor overruns the buffer,
+  // breaking the function's "Cookie[]" contract (which never throws).
+  const pageTableBytes = pageCount * UINT32_SIZE_BYTES;
+  if (pageTableBytes < 0 || BINARY_COOKIE_MIN_HEADER_BYTES + pageTableBytes > buffer.length) {
+    return [];
+  }
+
   let cursor = BINARY_COOKIE_MIN_HEADER_BYTES;
   const pageSizes: number[] = [];
 
@@ -32,6 +41,7 @@ export const parseBinaryCookies = (buffer: Buffer): Cookie[] => {
 
   const cookies: Cookie[] = [];
   for (const pageSize of pageSizes) {
+    if (cursor + pageSize > buffer.length) break;
     const page = buffer.subarray(cursor, cursor + pageSize);
     cursor += pageSize;
     cookies.push(...decodePage(page));
@@ -46,6 +56,14 @@ const decodePage = (page: Buffer): Cookie[] => {
   if (header !== BINARY_COOKIE_PAGE_HEADER) return [];
 
   const cookieCount = page.readUInt32LE(UINT32_SIZE_BYTES);
+  // HACK: same bounds check as parseBinaryCookies — cookieCount comes
+  // straight from the file and would otherwise let readUInt32LE
+  // throw RangeError on a truncated / fuzzed page.
+  const offsetTableBytes = cookieCount * UINT32_SIZE_BYTES;
+  if (offsetTableBytes < 0 || BINARY_COOKIE_MIN_HEADER_BYTES + offsetTableBytes > page.length) {
+    return [];
+  }
+
   const offsets: number[] = [];
   let cursor = BINARY_COOKIE_MIN_HEADER_BYTES;
 
@@ -56,6 +74,7 @@ const decodePage = (page: Buffer): Cookie[] => {
 
   const cookies: Cookie[] = [];
   for (const offset of offsets) {
+    if (offset >= page.length) continue;
     const cookie = decodeCookieRecord(page.subarray(offset));
     if (cookie) cookies.push(cookie);
   }
