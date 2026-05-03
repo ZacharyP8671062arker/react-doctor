@@ -6,9 +6,10 @@ import { SqliteClient } from "./sqlite-client";
 import { ChromiumSqliteFallback } from "./chromium-sqlite";
 import { ExtractionError, RequiresFullDiskAccess, UnknownError } from "./errors";
 import { parseBinaryCookies } from "./utils/binary-cookies";
+import { normalizeFirefoxExpiry } from "./utils/firefox-normalize";
 import { Cookie, type Browser, type SameSitePolicy } from "./types";
 import { defaultLogger, type Logger } from "./logger";
-import { MS_PER_SECOND, SAME_SITE_LAX, SAME_SITE_NONE, SAME_SITE_STRICT } from "./constants";
+import { SAME_SITE_LAX, SAME_SITE_NONE, SAME_SITE_STRICT } from "./constants";
 
 const sqliteBoolSchema = z
   .union([z.number(), z.bigint()])
@@ -16,11 +17,7 @@ const sqliteBoolSchema = z
 
 const firefoxExpirySchema = z
   .union([z.number(), z.bigint(), z.string()])
-  .transform((value): number | undefined => {
-    const milliseconds = Number(value);
-    if (Number.isNaN(milliseconds) || milliseconds <= 0) return undefined;
-    return Math.floor(milliseconds / MS_PER_SECOND);
-  });
+  .transform((value): number | undefined => normalizeFirefoxExpiry(value));
 
 const firefoxSameSiteSchema = z
   .union([z.number(), z.bigint(), z.string()])

@@ -1,5 +1,11 @@
 export const MS_PER_SECOND = 1000;
 
+// HACK: Unix timestamp for 9999-12-31T23:59:59Z. Used by browser-specific
+// expiry normalizers to clamp wildly-out-of-range integers (corrupted
+// cookie databases occasionally store years > 9999, which then overflow
+// JS Date downstream).
+export const MAX_UNIX_EPOCH_SECONDS = 253_402_300_799;
+
 export const SAME_SITE_NONE = 0;
 export const SAME_SITE_LAX = 1;
 export const SAME_SITE_STRICT = 2;
