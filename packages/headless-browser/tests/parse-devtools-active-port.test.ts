@@ -53,4 +53,16 @@ describe("parseDevToolsActivePort", () => {
 
     expect(result).toEqual({ port: 49152, wsPath: "/devtools/browser/uuid" });
   });
+
+  it("falls back to /devtools/browser when the second line is empty", () => {
+    // Regression: with `??`, an empty (vs nullish) second line let the
+    // wsPath through as `""`, producing a pathless ws:// URL.
+    const result = parseDevToolsActivePort("9222\n\nignored");
+    expect(result).toEqual({ port: 9222, wsPath: "/devtools/browser" });
+  });
+
+  it("falls back to /devtools/browser when the second line is whitespace-only", () => {
+    const result = parseDevToolsActivePort("9222\n   \nignored");
+    expect(result).toEqual({ port: 9222, wsPath: "/devtools/browser" });
+  });
 });
