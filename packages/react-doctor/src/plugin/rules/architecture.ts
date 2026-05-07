@@ -394,3 +394,254 @@ export const reactCompilerDestructureMethod: Rule = {
     };
   },
 };
+
+// HACK: the three legacy class lifecycles `componentWillMount`,
+// `componentWillReceiveProps`, and `componentWillUpdate` are unsafe
+// under concurrent rendering because the renderer can call them, throw
+// the work away, and call them again. React 18.3.1 emits a warning;
+// React 19 REMOVES them entirely (the `UNSAFE_` prefix included). We
+// flag both forms so the prefix doesn't get treated as a permanent fix.
+const LEGACY_LIFECYCLE_REPLACEMENTS: Record<string, string> = {
+  componentWillMount:
+    "Move side effects to `componentDidMount`; move initial state to `constructor`",
+  componentWillReceiveProps:
+    "Move side effects to `componentDidUpdate` (compare prevProps); move pure state derivation to the static `getDerivedStateFromProps`",
+  componentWillUpdate:
+    "Move DOM reads to `getSnapshotBeforeUpdate` (passes the value to `componentDidUpdate`); move other work to `componentDidUpdate`",
+};
+
+const stripUnsafePrefix = (name: string): { baseName: string; hasUnsafePrefix: boolean } => {
+  if (name.startsWith("UNSAFE_")) {
+    return { baseName: name.slice("UNSAFE_".length), hasUnsafePrefix: true };
+  }
+  return { baseName: name, hasUnsafePrefix: false };
+};
+
+const buildLegacyLifecycleMessage = (originalName: string): string | null => {
+  const { baseName, hasUnsafePrefix } = stripUnsafePrefix(originalName);
+  const replacement = LEGACY_LIFECYCLE_REPLACEMENTS[baseName];
+  if (!replacement) return null;
+  const removalNote = hasUnsafePrefix
+    ? `\`${originalName}\` is removed in React 19 (the UNSAFE_ prefix only silences the React 18 warning, it doesn't fix the concurrent-mode hazard).`
+    : `\`${originalName}\` is removed in React 19 and warns in React 18.3.1.`;
+  return `${removalNote} ${replacement}.`;
+};
+
+export const noLegacyClassLifecycles: Rule = {
+  create: (context: RuleContext) => {
+    const checkMember = (memberNode: EsTreeNode | undefined): void => {
+      if (!memberNode) return;
+      if (memberNode.type !== "MethodDefinition" && memberNode.type !== "PropertyDefinition")
+        return;
+      if (memberNode.key?.type !== "Identifier") return;
+      const message = buildLegacyLifecycleMessage(memberNode.key.name);
+      if (message) context.report({ node: memberNode.key, message });
+    };
+
+    return {
+      ClassBody(node: EsTreeNode) {
+        for (const member of node.body ?? []) {
+          checkMember(member);
+        }
+      },
+    };
+  },
+};
+
+// HACK: legacy context (`childContextTypes` + `getChildContext` on
+// providers, `contextTypes` on consumers) was deprecated in 16.3, warns
+// in 18.3.1, and is REMOVED in 19. Migration is cross-file (provider +
+// every consumer must be moved together) so flagging surface area early
+// is high-leverage. We catch the static class-property forms AND the
+// `Foo.contextTypes = {...}` shape — both styles appear in the wild,
+// and missing one leaves silent gaps.
+const LEGACY_CONTEXT_NAMES: ReadonlySet<string> = new Set([
+  "childContextTypes",
+  "contextTypes",
+  "getChildContext",
+]);
+
+const buildLegacyContextMessage = (memberName: string): string => {
+  if (memberName === "childContextTypes" || memberName === "getChildContext") {
+    return `${memberName} is part of the legacy context API (REMOVED in React 19). Replace the provider with \`createContext\` + \`<MyContext.Provider value={...}>\` and consume via \`useContext()\` (or \`use()\` on React 19+) — every consumer must migrate together`;
+  }
+  return "contextTypes is part of the legacy context API (REMOVED in React 19). Replace with `static contextType = MyContext` (single context) or read the modern context with `useContext()` / `use()` from a function component — coordinate with the provider's migration";
+};
+
+const isInsideClassBody = (node: EsTreeNode): boolean => {
+  let current = node.parent;
+  while (current) {
+    if (current.type === "ClassBody") return true;
+    if (
+      current.type === "FunctionDeclaration" ||
+      current.type === "FunctionExpression" ||
+      current.type === "ArrowFunctionExpression"
+    ) {
+      return false;
+    }
+    current = current.parent;
+  }
+  return false;
+};
+
+export const noLegacyContextApi: Rule = {
+  create: (context: RuleContext) => {
+    const checkMember = (memberNode: EsTreeNode | undefined): void => {
+      if (!memberNode) return;
+      if (memberNode.type !== "MethodDefinition" && memberNode.type !== "PropertyDefinition")
+        return;
+      if (memberNode.key?.type !== "Identifier") return;
+      if (!LEGACY_CONTEXT_NAMES.has(memberNode.key.name)) return;
+      context.report({
+        node: memberNode.key,
+        message: buildLegacyContextMessage(memberNode.key.name),
+      });
+    };
+
+    return {
+      ClassBody(node: EsTreeNode) {
+        for (const member of node.body ?? []) {
+          checkMember(member);
+        }
+      },
+      AssignmentExpression(node: EsTreeNode) {
+        if (node.operator !== "=") return;
+        const left = node.left;
+        if (left?.type !== "MemberExpression") return;
+        if (left.computed) return;
+        if (left.property?.type !== "Identifier") return;
+        if (!LEGACY_CONTEXT_NAMES.has(left.property.name)) return;
+        if (left.object?.type !== "Identifier") return;
+        if (!isUppercaseName(left.object.name)) return;
+        if (isInsideClassBody(node)) return;
+        context.report({
+          node: left,
+          message: buildLegacyContextMessage(left.property.name),
+        });
+      },
+    };
+  },
+};
+
+// HACK: React 19 removes `Component.defaultProps` for FUNCTION components
+// (class components still tolerate it but the team recommends ES6
+// default parameters anyway). Detection target: any
+// `<Identifier>.defaultProps = <ObjectExpression>` assignment where the
+// identifier looks like a component (uppercase first letter). We can't
+// distinguish class vs function from the assignment alone, but the
+// recommendation is the same either way — switch to ES6 default params
+// in destructured props — so the guidance is uniform.
+export const noDefaultProps: Rule = {
+  create: (context: RuleContext) => ({
+    AssignmentExpression(node: EsTreeNode) {
+      if (node.operator !== "=") return;
+      const left = node.left;
+      if (left?.type !== "MemberExpression") return;
+      if (left.computed) return;
+      if (left.property?.type !== "Identifier" || left.property.name !== "defaultProps") return;
+      if (left.object?.type !== "Identifier") return;
+      if (!isUppercaseName(left.object.name)) return;
+      context.report({
+        node: left,
+        message: `${left.object.name}.defaultProps is removed for function components in React 19 — replace with ES6 default parameters in the destructured props (e.g. \`function ${left.object.name}({ size = "md", ...rest })\`)`,
+      });
+    },
+  }),
+};
+
+// HACK: companion to `noReact19DeprecatedApis` for the react-dom side
+// of the React 19 migration. Catches the legacy root API (render /
+// hydrate / unmountComponentAtNode), findDOMNode, and the
+// renamed-and-moved `useFormState` (now `useActionState` from `react`).
+// The whole `react-dom/test-utils` entry point is gone in 19; we flag
+// every import from it and steer users to `act` from `react` plus
+// `fireEvent` / `render` from @testing-library/react. Kept as a
+// separate rule from `noReact19DeprecatedApis` so the per-source
+// binding tracking stays simple — `react` and `react-dom` namespace
+// imports never collide.
+const REACT_DOM_DEPRECATED_MESSAGES: Record<string, string> = {
+  render:
+    "ReactDOM.render is the legacy root API — switch to `import { createRoot } from 'react-dom/client'` and call `createRoot(container).render(...)` (REMOVED in React 19)",
+  hydrate:
+    "ReactDOM.hydrate is the legacy SSR API — switch to `import { hydrateRoot } from 'react-dom/client'` and call `hydrateRoot(container, <App />)` (REMOVED in React 19)",
+  unmountComponentAtNode:
+    "ReactDOM.unmountComponentAtNode no longer works on roots created with `createRoot` — keep a reference to the root and call `root.unmount()` instead (REMOVED in React 19)",
+  findDOMNode:
+    "ReactDOM.findDOMNode crawls the rendered tree and breaks composition — accept a ref directly and read `ref.current` (REMOVED in React 19)",
+  useFormState:
+    "useFormState was renamed to `useActionState` and moved to `react` — switch to `import { useActionState } from 'react'` (REMOVED from react-dom in React 19)",
+};
+
+const REACT_DOM_TEST_UTILS_REPLACEMENTS: Record<string, string> = {
+  act: "`import { act } from 'react'` instead",
+  Simulate: "`fireEvent` from `@testing-library/react` instead",
+  renderIntoDocument: "`render` from `@testing-library/react` instead",
+  findRenderedDOMComponentWithTag: "`getByRole` / `getByTestId` from `@testing-library/react`",
+  findRenderedDOMComponentWithClass: "`getByRole` or `container.querySelector` from RTL",
+  scryRenderedDOMComponentsWithTag: "`getAllByRole` from `@testing-library/react`",
+};
+
+const buildTestUtilsMessage = (importedName: string): string => {
+  const replacement = REACT_DOM_TEST_UTILS_REPLACEMENTS[importedName];
+  const replacementText = replacement
+    ? `Use ${replacement}.`
+    : "Switch to `act` from `react` or the equivalent in `@testing-library/react`.";
+  return `react-dom/test-utils is removed in React 19. ${replacementText}`;
+};
+
+export const noReactDomDeprecatedApis: Rule = {
+  create: (context: RuleContext) => {
+    const reactDomNamespaceBindings = new Set<string>();
+
+    return {
+      ImportDeclaration(node: EsTreeNode) {
+        const sourceValue = node.source?.value;
+        if (typeof sourceValue !== "string") return;
+
+        if (sourceValue === "react-dom/test-utils") {
+          for (const specifier of node.specifiers ?? []) {
+            if (specifier.type === "ImportSpecifier") {
+              const importedName = specifier.imported?.name ?? "default";
+              context.report({ node: specifier, message: buildTestUtilsMessage(importedName) });
+              continue;
+            }
+            context.report({
+              node: specifier,
+              message:
+                "react-dom/test-utils is removed in React 19. Use `act` from `react` and `fireEvent` / `render` from `@testing-library/react` instead",
+            });
+          }
+          return;
+        }
+
+        if (sourceValue !== "react-dom") return;
+
+        for (const specifier of node.specifiers ?? []) {
+          if (specifier.type === "ImportSpecifier") {
+            const importedName = specifier.imported?.name;
+            if (!importedName) continue;
+            const message = REACT_DOM_DEPRECATED_MESSAGES[importedName];
+            if (message) context.report({ node: specifier, message });
+            continue;
+          }
+          if (
+            specifier.type === "ImportDefaultSpecifier" ||
+            specifier.type === "ImportNamespaceSpecifier"
+          ) {
+            const localName = specifier.local?.name;
+            if (localName) reactDomNamespaceBindings.add(localName);
+          }
+        }
+      },
+      MemberExpression(node: EsTreeNode) {
+        if (reactDomNamespaceBindings.size === 0) return;
+        if (node.computed) return;
+        if (node.object?.type !== "Identifier") return;
+        if (!reactDomNamespaceBindings.has(node.object.name)) return;
+        if (node.property?.type !== "Identifier") return;
+        const message = REACT_DOM_DEPRECATED_MESSAGES[node.property.name];
+        if (message) context.report({ node, message });
+      },
+    };
+  },
+};

@@ -244,6 +244,10 @@ export const GLOBAL_REACT_DOCTOR_RULES: Record<string, RuleSeverity> = {
   "react-doctor/no-render-prop-children": "warn",
   "react-doctor/no-nested-component-definition": "error",
   "react-doctor/react-compiler-destructure-method": "warn",
+  "react-doctor/no-legacy-class-lifecycles": "error",
+  "react-doctor/no-legacy-context-api": "error",
+  "react-doctor/no-default-props": "warn",
+  "react-doctor/no-react-dom-deprecated-apis": "warn",
 
   "react-doctor/no-usememo-simple-expression": "warn",
   "react-doctor/no-layout-property-animation": "error",
