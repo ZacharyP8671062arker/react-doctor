@@ -32,7 +32,7 @@ import path from "node:path";
 import { afterAll, describe, expect, it } from "vite-plus/test";
 
 import { OXLINT_MAX_FILES_PER_BATCH, SPAWN_ARGS_MAX_LENGTH_CHARS } from "../../src/constants.js";
-import { calculateScoreLocally } from "../../src/core/calculate-score-locally.js";
+import { calculateScoreLocally } from "../../src/utils/calculate-score-locally.js";
 import { createOxlintConfig } from "../../src/oxlint-config.js";
 import { batchIncludePaths } from "../../src/utils/batch-include-paths.js";
 import { discoverProject } from "../../src/utils/discover-project.js";
@@ -155,7 +155,7 @@ describe("issue #89: --offline produces a score calculated locally", () => {
   it("does not require any network access", async () => {
     // Sanity: no `fetch` involvement in the local scoring path.
     const calculateSource = fs.readFileSync(
-      path.resolve(import.meta.dirname, "../../src/core/calculate-score-locally.ts"),
+      path.resolve(import.meta.dirname, "../../src/utils/calculate-score-locally.ts"),
       "utf8",
     );
     expect(calculateSource).not.toContain("fetch(");

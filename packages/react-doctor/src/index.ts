@@ -1,4 +1,5 @@
 import path from "node:path";
+import { buildNoReactDependencyError } from "./constants.js";
 import type {
   Diagnostic,
   DiagnoseOptions,
@@ -14,18 +15,18 @@ import type {
   ReactDoctorConfig,
   ScoreResult,
 } from "./types.js";
-import { diagnoseCore } from "./core/diagnose-core.js";
-import { computeJsxIncludePaths } from "./utils/jsx-include-paths.js";
 import { buildJsonReport } from "./utils/build-json-report.js";
 import { buildJsonReportError } from "./utils/build-json-report-error.js";
+import { calculateScore } from "./utils/calculate-score.js";
 import { checkReducedMotion } from "./utils/check-reduced-motion.js";
 import { clearIgnorePatternsCache } from "./utils/collect-ignore-patterns.js";
 import { clearProjectCache, discoverProject } from "./utils/discover-project.js";
+import { computeJsxIncludePaths } from "./utils/jsx-include-paths.js";
 import { clearConfigCache, loadConfig } from "./utils/load-config.js";
+import { mergeAndFilterDiagnostics } from "./utils/merge-and-filter-diagnostics.js";
 import { clearPackageJsonCache } from "./utils/read-package-json.js";
 import { createNodeReadFileLinesSync } from "./utils/read-file-lines-node.js";
 import { resolveLintIncludePaths } from "./utils/resolve-lint-include-paths.js";
-import { calculateScore } from "./utils/calculate-score.js";
 import { runKnip } from "./utils/run-knip.js";
 import { runOxlint } from "./utils/run-oxlint.js";
 
@@ -87,43 +88,83 @@ export const toJsonReport = (result: DiagnoseResult, options: ToJsonReportOption
     totalElapsedMilliseconds: result.elapsedMilliseconds,
   });
 
+const EMPTY_DIAGNOSTICS: Diagnostic[] = [];
+
+const settledOrEmpty = <T extends Diagnostic[]>(
+  settled: PromiseSettledResult<T>,
+  label: string,
+): T | Diagnostic[] => {
+  if (settled.status === "fulfilled") return settled.value;
+  console.error(`${label} rejected:`, settled.reason);
+  return EMPTY_DIAGNOSTICS;
+};
+
 export const diagnose = async (
   directory: string,
   options: DiagnoseOptions = {},
 ): Promise<DiagnoseResult> => {
+  const startTime = globalThis.performance.now();
   const resolvedDirectory = path.resolve(directory);
   const userConfig = loadConfig(resolvedDirectory);
   const includePaths = options.includePaths ?? [];
   const isDiffMode = includePaths.length > 0;
+  const projectInfo = discoverProject(resolvedDirectory);
+
+  if (!projectInfo.reactVersion) {
+    throw new Error(buildNoReactDependencyError(resolvedDirectory));
+  }
+
   const lintIncludePaths =
     computeJsxIncludePaths(includePaths) ?? resolveLintIncludePaths(resolvedDirectory, userConfig);
   const readFileLinesSync = createNodeReadFileLinesSync(resolvedDirectory);
 
-  return diagnoseCore(
-    {
-      rootDirectory: resolvedDirectory,
-      readFileLinesSync,
-      loadUserConfig: () => userConfig,
-      discoverProjectInfo: () => discoverProject(resolvedDirectory),
-      calculateDiagnosticsScore: calculateScore,
-      getExtraDiagnostics: () => (isDiffMode ? [] : checkReducedMotion(resolvedDirectory)),
-      createRunners: ({ resolvedDirectory: projectRoot, projectInfo, userConfig: config }) => ({
-        runLint: () =>
-          runOxlint({
-            rootDirectory: projectRoot,
-            hasTypeScript: projectInfo.hasTypeScript,
-            framework: projectInfo.framework,
-            hasReactCompiler: projectInfo.hasReactCompiler,
-            hasTanStackQuery: projectInfo.hasTanStackQuery,
-            includePaths: lintIncludePaths,
-            customRulesOnly: config?.customRulesOnly ?? false,
-            respectInlineDisables:
-              options.respectInlineDisables ?? config?.respectInlineDisables ?? true,
-            adoptExistingLintConfig: config?.adoptExistingLintConfig ?? true,
-          }),
-        runDeadCode: () => runKnip(projectRoot),
-      }),
-    },
-    { ...options, lintIncludePaths },
+  const effectiveLint = options.lint ?? userConfig?.lint ?? true;
+  const effectiveDeadCode = options.deadCode ?? userConfig?.deadCode ?? true;
+
+  const lintPromise = effectiveLint
+    ? runOxlint({
+        rootDirectory: resolvedDirectory,
+        hasTypeScript: projectInfo.hasTypeScript,
+        framework: projectInfo.framework,
+        hasReactCompiler: projectInfo.hasReactCompiler,
+        hasTanStackQuery: projectInfo.hasTanStackQuery,
+        includePaths: lintIncludePaths,
+        customRulesOnly: userConfig?.customRulesOnly ?? false,
+        respectInlineDisables:
+          options.respectInlineDisables ?? userConfig?.respectInlineDisables ?? true,
+        adoptExistingLintConfig: userConfig?.adoptExistingLintConfig ?? true,
+      }).catch((error: unknown) => {
+        console.error("Lint failed:", error);
+        return EMPTY_DIAGNOSTICS;
+      })
+    : Promise.resolve(EMPTY_DIAGNOSTICS);
+
+  const deadCodePromise =
+    effectiveDeadCode && !isDiffMode
+      ? runKnip(resolvedDirectory).catch((error: unknown) => {
+          console.error("Dead code analysis failed:", error);
+          return EMPTY_DIAGNOSTICS;
+        })
+      : Promise.resolve(EMPTY_DIAGNOSTICS);
+
+  // HACK: both runners catch their own errors today, but `Promise.allSettled`
+  // is the load-bearing safety net for the case where a future runner
+  // is refactored without a `.catch()`. Surfacing the rejection via
+  // `console.error` and returning [] keeps `diagnose()` resilient and
+  // is cheaper than a second look at the bug-report log.
+  const [lintSettled, deadCodeSettled] = await Promise.allSettled([lintPromise, deadCodePromise]);
+  const lintDiagnostics = settledOrEmpty(lintSettled, "Lint");
+  const deadCodeDiagnostics = settledOrEmpty(deadCodeSettled, "Dead code");
+  const environmentDiagnostics = isDiffMode ? [] : checkReducedMotion(resolvedDirectory);
+
+  const diagnostics = mergeAndFilterDiagnostics(
+    [...lintDiagnostics, ...deadCodeDiagnostics, ...environmentDiagnostics],
+    resolvedDirectory,
+    userConfig,
+    readFileLinesSync,
   );
+  const elapsedMilliseconds = globalThis.performance.now() - startTime;
+  const score = await calculateScore(diagnostics);
+
+  return { diagnostics, score, project: projectInfo, elapsedMilliseconds };
 };
