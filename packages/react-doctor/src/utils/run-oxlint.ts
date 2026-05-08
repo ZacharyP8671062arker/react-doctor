@@ -45,6 +45,8 @@ const PLUGIN_CATEGORY_MAP: Record<string, string> = {
 const RULE_CATEGORY_MAP: Record<string, string> = {
   "react-doctor/no-derived-state-effect": "State & Effects",
   "react-doctor/no-fetch-in-effect": "State & Effects",
+  "react-doctor/no-mirror-prop-effect": "State & Effects",
+  "react-doctor/no-mutable-in-deps": "State & Effects",
   "react-doctor/no-cascading-set-state": "State & Effects",
   "react-doctor/no-effect-chain": "State & Effects",
   "react-doctor/no-effect-event-handler": "State & Effects",
@@ -62,6 +64,7 @@ const RULE_CATEGORY_MAP: Record<string, string> = {
   "react-doctor/rerender-state-only-in-handlers": "Performance",
   "react-doctor/rerender-defer-reads-hook": "Performance",
   "react-doctor/advanced-event-handler-refs": "Performance",
+  "react-doctor/effect-needs-cleanup": "State & Effects",
 
   "react-doctor/no-generic-handler-names": "Architecture",
   "react-doctor/no-giant-component": "Architecture",
@@ -241,6 +244,10 @@ const RULE_HELP_MAP: Record<string, string> = {
     "For derived state, compute inline: `const x = fn(dep)`. For state resets on prop change, use a key prop: `<Component key={prop} />`. See https://react.dev/learn/you-might-not-need-an-effect",
   "no-fetch-in-effect":
     "Use `useQuery()` from @tanstack/react-query, `useSWR()`, or fetch in a Server Component instead",
+  "no-mirror-prop-effect":
+    "Delete both the `useState` and the `useEffect` and read the prop directly during render. Mirroring a prop into local state forces a stale first render before the effect re-syncs",
+  "no-mutable-in-deps":
+    "Read mutable values (`location.pathname`, `ref.current`) inside the effect body instead of in the deps array, or subscribe with `useSyncExternalStore`. Mutations to these don't trigger re-renders, so listing them in deps doesn't make the effect react to changes",
   "no-cascading-set-state":
     "Combine into useReducer: `const [state, dispatch] = useReducer(reducer, initialState)`",
   "no-effect-chain":
@@ -315,6 +322,8 @@ const RULE_HELP_MAP: Record<string, string> = {
     'Use a threshold/media-query hook (e.g. `useMediaQuery("(max-width: 767px)")`) — the component re-renders only when the threshold flips, not every pixel',
   "advanced-event-handler-refs":
     "Store the handler in a ref and have the listener read `handlerRef.current()` — the subscription stays put while the latest handler is always called",
+  "effect-needs-cleanup":
+    "Return a cleanup function that releases the subscription / timer: `return () => target.removeEventListener(name, handler)` for listeners, `return () => clearInterval(id)` / `clearTimeout(id)` for timers, or `return unsubscribe` if the subscribe call already returned one",
   "async-defer-await":
     "Move the `await` after the synchronous early-return guard so the skip path stays fast",
   "async-await-in-loop":

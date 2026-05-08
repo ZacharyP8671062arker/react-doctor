@@ -390,6 +390,21 @@ export const MUTATING_ROUTE_SEGMENTS = new Set([
 export const EFFECT_HOOK_NAMES = new Set(["useEffect", "useLayoutEffect"]);
 export const HOOKS_WITH_DEPS = new Set(["useEffect", "useLayoutEffect", "useMemo", "useCallback"]);
 
+// Globals whose values mutate outside the React data flow. Listing
+// them as deps doesn't trigger a re-run when they change because
+// React compares deps with `Object.is` during render — and the read
+// happens during render, before the mutation. From "Lifecycle of
+// Reactive Effects" — Can global or mutable values be dependencies?
+export const MUTABLE_GLOBAL_ROOTS = new Set([
+  "location",
+  "window",
+  "document",
+  "navigator",
+  "history",
+  "screen",
+  "performance",
+]);
+
 // Used by `no-effect-chain` to decide whether an effect is doing
 // "real" external-system synchronization (in which case effects on
 // either side of the chain are exempt, per the article's own caveat

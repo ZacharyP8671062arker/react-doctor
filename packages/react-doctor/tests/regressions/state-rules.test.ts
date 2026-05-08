@@ -1317,3 +1317,647 @@ export const Form = ({ inputProps }: { inputProps: object }) => {
     expect(hits).toHaveLength(0);
   });
 });
+describe("effect-needs-cleanup", () => {
+  it("flags a useEffect with addEventListener but no cleanup", async () => {
+    const projectDir = setupReactProject(tempRoot, "effect-needs-cleanup-listener", {
+      files: {
+        "src/Resize.tsx": `import { useEffect, useState } from "react";
+
+export const Resize = () => {
+  const [width, setWidth] = useState(0);
+  useEffect(() => {
+    window.addEventListener("resize", () => setWidth(window.innerWidth));
+  }, []);
+  return <span>{width}</span>;
+};
+`,
+      },
+    });
+
+    const hits = await collectRuleHits(projectDir, "effect-needs-cleanup");
+    expect(hits).toHaveLength(1);
+    expect(hits[0].message).toContain("addEventListener");
+  });
+
+  it("flags a useEffect with setInterval but no cleanup", async () => {
+    const projectDir = setupReactProject(tempRoot, "effect-needs-cleanup-interval", {
+      files: {
+        "src/Clock.tsx": `import { useEffect, useState } from "react";
+
+export const Clock = () => {
+  const [now, setNow] = useState(0);
+  useEffect(() => {
+    setInterval(() => setNow(Date.now()), 1000);
+  }, []);
+  return <span>{now}</span>;
+};
+`,
+      },
+    });
+
+    const hits = await collectRuleHits(projectDir, "effect-needs-cleanup");
+    expect(hits).toHaveLength(1);
+    expect(hits[0].message).toContain("setInterval");
+  });
+
+  it("flags a useEffect with `store.subscribe` but no return", async () => {
+    const projectDir = setupReactProject(tempRoot, "effect-needs-cleanup-subscribe", {
+      files: {
+        "src/Audit.tsx": `import { useEffect } from "react";
+
+declare const store: { subscribe: (handler: () => void) => () => void };
+declare const audit: () => void;
+
+export const Audit = () => {
+  useEffect(() => {
+    store.subscribe(() => audit());
+  }, []);
+  return <span />;
+};
+`,
+      },
+    });
+
+    const hits = await collectRuleHits(projectDir, "effect-needs-cleanup");
+    expect(hits).toHaveLength(1);
+  });
+
+  it("does NOT flag a useEffect that returns the unsubscribe binding", async () => {
+    const projectDir = setupReactProject(tempRoot, "effect-needs-cleanup-bare-return", {
+      files: {
+        "src/Stable.tsx": `import { useEffect } from "react";
+
+declare const store: { subscribe: (handler: () => void) => () => void };
+declare const audit: () => void;
+
+export const Stable = () => {
+  useEffect(() => {
+    const unsubscribe = store.subscribe(() => audit());
+    return unsubscribe;
+  }, []);
+  return <span />;
+};
+`,
+      },
+    });
+
+    const hits = await collectRuleHits(projectDir, "effect-needs-cleanup");
+    expect(hits).toHaveLength(0);
+  });
+
+  it("does NOT flag a useEffect that returns a cleanup arrow calling removeEventListener", async () => {
+    const projectDir = setupReactProject(tempRoot, "effect-needs-cleanup-remove-listener", {
+      files: {
+        "src/Resize.tsx": `import { useEffect, useState } from "react";
+
+export const Resize = () => {
+  const [width, setWidth] = useState(0);
+  useEffect(() => {
+    const onResize = () => setWidth(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  return <span>{width}</span>;
+};
+`,
+      },
+    });
+
+    const hits = await collectRuleHits(projectDir, "effect-needs-cleanup");
+    expect(hits).toHaveLength(0);
+  });
+
+  it("does NOT flag a useEffect that returns a cleanup arrow calling clearInterval", async () => {
+    const projectDir = setupReactProject(tempRoot, "effect-needs-cleanup-clear-interval", {
+      files: {
+        "src/Clock.tsx": `import { useEffect, useState } from "react";
+
+export const Clock = () => {
+  const [now, setNow] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  return <span>{now}</span>;
+};
+`,
+      },
+    });
+
+    const hits = await collectRuleHits(projectDir, "effect-needs-cleanup");
+    expect(hits).toHaveLength(0);
+  });
+
+  it("does NOT flag expression-body arrow whose subscribe return is the implicit cleanup (Bugbot #157)", async () => {
+    // Regression: \`useEffect(() => store.subscribe(handler), [])\` is a
+    // common compact form — the arrow's expression body IS the body,
+    // and the subscribe call's return value (the unsubscribe fn) is
+    // implicitly returned as the effect's cleanup. The earlier
+    // detector rejected non-BlockStatement bodies outright and
+    // false-positived this shape.
+    const projectDir = setupReactProject(tempRoot, "effect-needs-cleanup-expression-body", {
+      files: {
+        "src/Subscribe.tsx": `import { useEffect } from "react";
+
+declare const store: { subscribe: (handler: () => void) => () => void };
+declare const handler: () => void;
+
+export const Subscribe = () => {
+  useEffect(() => store.subscribe(handler), []);
+  return <span />;
+};
+`,
+      },
+    });
+
+    const hits = await collectRuleHits(projectDir, "effect-needs-cleanup");
+    expect(hits).toHaveLength(0);
+  });
+
+  it("does NOT flag a `setTimeout` that lives inside the cleanup return (Bugbot #157 round 3)", async () => {
+    // Regression: the subscribe/timer scanner walked the entire
+    // callback including the cleanup return body. A \`setTimeout\` in
+    // the cleanup is a disposal step, not a new registration; it
+    // should not produce a 'missing cleanup' diagnostic.
+    const projectDir = setupReactProject(tempRoot, "effect-needs-cleanup-timer-in-cleanup", {
+      files: {
+        "src/Beacon.tsx": `import { useEffect } from "react";
+
+declare const doSetup: () => void;
+declare const sendBeacon: () => void;
+
+export const Beacon = () => {
+  useEffect(() => {
+    doSetup();
+    return () => {
+      setTimeout(() => sendBeacon(), 0);
+    };
+  }, []);
+  return <span />;
+};
+`,
+      },
+    });
+
+    const hits = await collectRuleHits(projectDir, "effect-needs-cleanup");
+    expect(hits).toHaveLength(0);
+  });
+
+  it("does NOT flag `return () => unsub()` after `const unsub = subscribe(...)` (Bugbot #157 round 3)", async () => {
+    // Regression: the Identifier-callee cleanup regex only matched
+    // long-form names (unsubscribe / cleanup / dispose / destroy /
+    // teardown). \`unsub\` (and other short forms) were missing,
+    // producing a false positive on the canonical bind-the-result-
+    // and-call-it shape.
+    const projectDir = setupReactProject(tempRoot, "effect-needs-cleanup-short-unsub-call", {
+      files: {
+        "src/Subscribe.tsx": `import { useEffect } from "react";
+
+declare const store: { subscribe: (handler: () => void) => () => void };
+declare const handler: () => void;
+
+export const Subscribe = () => {
+  useEffect(() => {
+    const unsub = store.subscribe(handler);
+    return () => unsub();
+  }, []);
+  return <span />;
+};
+`,
+      },
+    });
+
+    const hits = await collectRuleHits(projectDir, "effect-needs-cleanup");
+    expect(hits).toHaveLength(0);
+  });
+
+  it("does NOT flag a BlockStatement that explicitly returns a subscribe call (Bugbot #157, sibling form)", async () => {
+    const projectDir = setupReactProject(tempRoot, "effect-needs-cleanup-return-subscribe", {
+      files: {
+        "src/Subscribe.tsx": `import { useEffect } from "react";
+
+declare const store: { subscribe: (handler: () => void) => () => void };
+declare const handler: () => void;
+
+export const Subscribe = () => {
+  useEffect(() => {
+    return store.subscribe(handler);
+  }, []);
+  return <span />;
+};
+`,
+      },
+    });
+
+    const hits = await collectRuleHits(projectDir, "effect-needs-cleanup");
+    expect(hits).toHaveLength(0);
+  });
+});
+
+describe("no-mirror-prop-effect", () => {
+  it("flags the canonical `useState(prop) + useEffect(setX(prop), [prop])` shape", async () => {
+    // https://react.dev/learn/you-might-not-need-an-effect#updating-state-based-on-props-or-state
+    const projectDir = setupReactProject(tempRoot, "no-mirror-prop-effect-canonical", {
+      files: {
+        "src/Form.tsx": `import { useEffect, useState } from "react";
+
+export const Form = ({ value }: { value: string }) => {
+  const [draft, setDraft] = useState(value);
+  useEffect(() => {
+    setDraft(value);
+  }, [value]);
+  return <input value={draft} onChange={(event) => setDraft(event.target.value)} />;
+};
+`,
+      },
+    });
+
+    const hits = await collectRuleHits(projectDir, "no-mirror-prop-effect");
+    expect(hits).toHaveLength(1);
+    expect(hits[0].message).toContain("draft");
+    expect(hits[0].message).toContain("value");
+  });
+
+  it("flags the MemberExpression variant `useState(prop.x) + setDraft(prop.x)`", async () => {
+    const projectDir = setupReactProject(tempRoot, "no-mirror-prop-effect-member", {
+      files: {
+        "src/Profile.tsx": `import { useEffect, useState } from "react";
+
+interface User { name: string }
+
+export const Profile = ({ user }: { user: User }) => {
+  const [draftName, setDraftName] = useState(user.name);
+  useEffect(() => {
+    setDraftName(user.name);
+  }, [user]);
+  return <input value={draftName} onChange={(event) => setDraftName(event.target.value)} />;
+};
+`,
+      },
+    });
+
+    const hits = await collectRuleHits(projectDir, "no-mirror-prop-effect");
+    expect(hits).toHaveLength(1);
+    expect(hits[0].message).toContain("draftName");
+    expect(hits[0].message).toContain("user");
+  });
+
+  it("does NOT flag a `useState(prop)` without a paired mirror effect (uncontrolled-with-key shape)", async () => {
+    const projectDir = setupReactProject(tempRoot, "no-mirror-prop-effect-uncontrolled", {
+      files: {
+        "src/Field.tsx": `import { useState } from "react";
+
+export const Field = ({ initialValue }: { initialValue: string }) => {
+  const [value, setValue] = useState(initialValue);
+  return <input value={value} onChange={(event) => setValue(event.target.value)} />;
+};
+`,
+      },
+    });
+
+    const hits = await collectRuleHits(projectDir, "no-mirror-prop-effect");
+    expect(hits).toHaveLength(0);
+  });
+
+  it("does NOT flag `useEffect(() => setX(value), [value])` without a paired `useState(value)` mirror", async () => {
+    const projectDir = setupReactProject(tempRoot, "no-mirror-prop-effect-no-paired", {
+      files: {
+        "src/Counter.tsx": `import { useEffect, useState } from "react";
+
+export const Counter = ({ value }: { value: string }) => {
+  const [doubled, setDoubled] = useState("");
+  useEffect(() => {
+    setDoubled(value + value);
+  }, [value]);
+  return <span>{doubled}</span>;
+};
+`,
+      },
+    });
+
+    const hits = await collectRuleHits(projectDir, "no-mirror-prop-effect");
+    expect(hits).toHaveLength(0);
+  });
+
+  it("does NOT flag when the useState initializer doesn't match the setter argument", async () => {
+    const projectDir = setupReactProject(tempRoot, "no-mirror-prop-effect-mismatch", {
+      files: {
+        "src/Mismatch.tsx": `import { useEffect, useState } from "react";
+
+export const Mismatch = ({ value }: { value: string }) => {
+  const [draft, setDraft] = useState(value);
+  useEffect(() => {
+    setDraft(value.toUpperCase());
+  }, [value]);
+  return <span>{draft}</span>;
+};
+`,
+      },
+    });
+
+    const hits = await collectRuleHits(projectDir, "no-mirror-prop-effect");
+    expect(hits).toHaveLength(0);
+  });
+
+  it("does NOT flag a useEffect inside a nested helper that closes over an outer prop", async () => {
+    // The inner helper isn't a component; its mirror-shape useState +
+    // useEffect uses `value` from Outer's closure, not its own props.
+    // The outer prop set must NOT leak into Inner's lookup.
+    const projectDir = setupReactProject(tempRoot, "no-mirror-prop-effect-nested-helper", {
+      files: {
+        "src/Outer.tsx": `import { useEffect, useState } from "react";
+
+export const Outer = ({ value }: { value: string }) => {
+  function inner() {
+    const [draft, setDraft] = useState(value);
+    useEffect(() => {
+      setDraft(value);
+    }, [value]);
+    void draft;
+    void setDraft;
+  }
+  inner();
+  return <span>{value}</span>;
+};
+`,
+      },
+    });
+
+    const hits = await collectRuleHits(projectDir, "no-mirror-prop-effect");
+    expect(hits).toHaveLength(0);
+  });
+});
+
+describe("no-mutable-in-deps", () => {
+  it("flags `location.pathname` in a useEffect deps array", async () => {
+    // https://react.dev/learn/lifecycle-of-reactive-effects#can-global-or-mutable-values-be-dependencies
+    const projectDir = setupReactProject(tempRoot, "no-mutable-in-deps-location", {
+      files: {
+        "src/Page.tsx": `import { useEffect } from "react";
+
+declare const trackPageView: (path: string) => void;
+
+export const Page = () => {
+  useEffect(() => {
+    trackPageView(location.pathname);
+  }, [location.pathname]);
+  return <div />;
+};
+`,
+      },
+    });
+
+    const hits = await collectRuleHits(projectDir, "no-mutable-in-deps");
+    expect(hits).toHaveLength(1);
+    expect(hits[0].message).toContain("location.*");
+  });
+
+  it("flags `<refIdent>.current` from a useRef binding in deps", async () => {
+    const projectDir = setupReactProject(tempRoot, "no-mutable-in-deps-ref-current", {
+      files: {
+        "src/Spy.tsx": `import { useEffect, useRef } from "react";
+
+declare const observeNode: (element: HTMLDivElement | null) => void;
+
+export const Spy = () => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    observeNode(containerRef.current);
+  }, [containerRef.current]);
+  return <div ref={containerRef} />;
+};
+`,
+      },
+    });
+
+    const hits = await collectRuleHits(projectDir, "no-mutable-in-deps");
+    expect(hits).toHaveLength(1);
+    expect(hits[0].message).toContain("containerRef.current");
+  });
+
+  it("flags `window.innerWidth` (deeper mutable global access) in deps", async () => {
+    const projectDir = setupReactProject(tempRoot, "no-mutable-in-deps-window", {
+      files: {
+        "src/Layout.tsx": `import { useEffect, useState } from "react";
+
+export const Layout = () => {
+  const [, setSize] = useState(0);
+  useEffect(() => {
+    setSize(window.innerWidth);
+  }, [window.innerWidth]);
+  return <div />;
+};
+`,
+      },
+    });
+
+    const hits = await collectRuleHits(projectDir, "no-mutable-in-deps");
+    expect(hits).toHaveLength(1);
+  });
+
+  it("does NOT flag a bare ref Identifier (the ref object itself is stable)", async () => {
+    const projectDir = setupReactProject(tempRoot, "no-mutable-in-deps-bare-ref", {
+      files: {
+        "src/Stable.tsx": `import { useEffect, useRef } from "react";
+
+declare const setupObserver: (target: { current: HTMLDivElement | null }) => () => void;
+
+export const Stable = () => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    return setupObserver(containerRef);
+  }, [containerRef]);
+  return <div ref={containerRef} />;
+};
+`,
+      },
+    });
+
+    const hits = await collectRuleHits(projectDir, "no-mutable-in-deps");
+    expect(hits).toHaveLength(0);
+  });
+
+  it("does NOT flag a regular state.field MemberExpression (state IS reactive)", async () => {
+    const projectDir = setupReactProject(tempRoot, "no-mutable-in-deps-state-field", {
+      files: {
+        "src/Settings.tsx": `import { useEffect, useState } from "react";
+
+export const Settings = () => {
+  const [profile] = useState({ name: "ada" });
+  useEffect(() => {
+    document.title = profile.name;
+  }, [profile.name]);
+  return <span>{profile.name}</span>;
+};
+`,
+      },
+    });
+
+    const hits = await collectRuleHits(projectDir, "no-mutable-in-deps");
+    expect(hits).toHaveLength(0);
+  });
+});
+
+describe("rerender-functional-setstate (extended to spread)", () => {
+  it("flags `setMessages([...messages, item])` array-spread shape", async () => {
+    // https://react.dev/learn/removing-effect-dependencies#are-you-reading-some-state-to-calculate-the-next-state
+    const projectDir = setupReactProject(tempRoot, "rerender-functional-setstate-array-spread", {
+      files: {
+        "src/Chat.tsx": `import { useEffect, useState } from "react";
+
+declare const subscribe: (handler: (message: string) => void) => () => void;
+
+export const Chat = () => {
+  const [messages, setMessages] = useState<string[]>([]);
+  useEffect(() => {
+    return subscribe((received) => {
+      setMessages([...messages, received]);
+    });
+  }, [messages]);
+  return <ul>{messages.map((line) => <li key={line}>{line}</li>)}</ul>;
+};
+`,
+      },
+    });
+
+    const hits = await collectRuleHits(projectDir, "rerender-functional-setstate");
+    expect(hits.length).toBeGreaterThanOrEqual(1);
+    expect(hits[0].message).toContain("[...messages");
+    expect(hits[0].message).toContain("functional update");
+  });
+
+  it("flags `setProfile({ ...profile, name })` object-spread shape", async () => {
+    const projectDir = setupReactProject(tempRoot, "rerender-functional-setstate-object-spread", {
+      files: {
+        "src/Profile.tsx": `import { useState } from "react";
+
+export const Profile = () => {
+  const [profile, setProfile] = useState({ name: "", email: "" });
+  const onChangeName = (event: { target: { value: string } }) => {
+    setProfile({ ...profile, name: event.target.value });
+  };
+  return (
+    <input
+      value={profile.name}
+      onChange={onChangeName}
+    />
+  );
+};
+`,
+      },
+    });
+
+    const hits = await collectRuleHits(projectDir, "rerender-functional-setstate");
+    expect(hits.length).toBeGreaterThanOrEqual(1);
+    expect(hits[0].message).toContain("...profile");
+  });
+
+  it("does NOT flag `setMessages(msgs => [...msgs, item])` (the recommended fix)", async () => {
+    const projectDir = setupReactProject(tempRoot, "rerender-functional-setstate-good", {
+      files: {
+        "src/Chat.tsx": `import { useEffect, useState } from "react";
+
+declare const subscribe: (handler: (message: string) => void) => () => void;
+
+export const Chat = () => {
+  const [messages, setMessages] = useState<string[]>([]);
+  useEffect(() => {
+    return subscribe((received) => {
+      setMessages((msgs) => [...msgs, received]);
+    });
+  }, []);
+  return <ul>{messages.map((line) => <li key={line}>{line}</li>)}</ul>;
+};
+`,
+      },
+    });
+
+    const hits = await collectRuleHits(projectDir, "rerender-functional-setstate");
+    expect(hits).toHaveLength(0);
+  });
+
+  it("does NOT flag `setItems([...other, x])` where the spread source is unrelated", async () => {
+    const projectDir = setupReactProject(tempRoot, "rerender-functional-setstate-unrelated", {
+      files: {
+        "src/Merge.tsx": `import { useState } from "react";
+
+export const Merge = ({ baseline }: { baseline: string[] }) => {
+  const [items, setItems] = useState<string[]>([]);
+  const onReset = () => setItems([...baseline, "first"]);
+  return <button onClick={onReset}>{items.length}</button>;
+};
+`,
+      },
+    });
+
+    const hits = await collectRuleHits(projectDir, "rerender-functional-setstate");
+    expect(hits).toHaveLength(0);
+  });
+});
+
+describe("rerender-dependencies (extended to inline functions)", () => {
+  it("flags an ArrowFunctionExpression in a useEffect deps array", async () => {
+    // https://react.dev/learn/removing-effect-dependencies#does-some-reactive-value-change-unintentionally
+    const projectDir = setupReactProject(tempRoot, "rerender-dependencies-arrow", {
+      files: {
+        "src/Sync.tsx": `import { useEffect } from "react";
+
+declare const subscribe: (handler: () => void) => () => void;
+
+export const Sync = () => {
+  useEffect(() => {
+    const unsubscribe = subscribe(() => {});
+    return unsubscribe;
+  }, [() => "fresh-each-render"]);
+  return <span />;
+};
+`,
+      },
+    });
+
+    const hits = await collectRuleHits(projectDir, "rerender-dependencies");
+    expect(hits.length).toBeGreaterThanOrEqual(1);
+    expect(hits.some((hit) => hit.message.includes("Inline function"))).toBe(true);
+  });
+
+  it("flags a FunctionExpression in a useCallback deps array", async () => {
+    const projectDir = setupReactProject(tempRoot, "rerender-dependencies-fn-expr", {
+      files: {
+        "src/Memo.tsx": `import { useCallback } from "react";
+
+export const Memo = () => {
+  const callback = useCallback(
+    () => {},
+    [function unstable() {}],
+  );
+  return <button onClick={callback}>x</button>;
+};
+`,
+      },
+    });
+
+    const hits = await collectRuleHits(projectDir, "rerender-dependencies");
+    expect(hits.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("does NOT flag a stable function reference (Identifier) in deps", async () => {
+    const projectDir = setupReactProject(tempRoot, "rerender-dependencies-identifier", {
+      files: {
+        "src/Stable.tsx": `import { useCallback, useEffect, useMemo } from "react";
+
+export const Stable = ({ onChange }: { onChange: () => void }) => {
+  const memoized = useMemo(() => 1, [onChange]);
+  const callback = useCallback(() => memoized, [memoized, onChange]);
+  useEffect(() => {
+    callback();
+  }, [callback]);
+  return <span>{memoized}</span>;
+};
+`,
+      },
+    });
+
+    const hits = await collectRuleHits(projectDir, "rerender-dependencies");
+    expect(hits).toHaveLength(0);
+  });
+});

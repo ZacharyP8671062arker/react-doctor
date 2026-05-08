@@ -123,6 +123,24 @@ describe("runOxlint", () => {
         ruleSource: "rules/state-and-effects.ts",
         severity: "warning",
       },
+      "no-mirror-prop-effect": {
+        fixture: "state-issues.tsx",
+        ruleSource: "rules/state-and-effects.ts",
+        severity: "warning",
+        category: "State & Effects",
+      },
+      "no-mutable-in-deps": {
+        fixture: "state-issues.tsx",
+        ruleSource: "rules/state-and-effects.ts",
+        severity: "error",
+        category: "State & Effects",
+      },
+      "effect-needs-cleanup": {
+        fixture: "state-issues.tsx",
+        ruleSource: "rules/state-and-effects.ts",
+        severity: "error",
+        category: "State & Effects",
+      },
       "no-cascading-set-state": {
         fixture: "state-issues.tsx",
         ruleSource: "rules/state-and-effects.ts",

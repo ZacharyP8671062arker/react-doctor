@@ -176,6 +176,7 @@ import {
 } from "./rules/tanstack-start.js";
 import {
   advancedEventHandlerRefs,
+  effectNeedsCleanup,
   noCascadingSetState,
   noDerivedStateEffect,
   noDerivedUseState,
@@ -185,6 +186,8 @@ import {
   noEffectEventInDeps,
   noEventTriggerState,
   noFetchInEffect,
+  noMirrorPropEffect,
+  noMutableInDeps,
   noPropCallbackInEffect,
   noSetStateInRender,
   preferUseReducer,
@@ -203,6 +206,8 @@ const plugin: RulePlugin = {
   rules: {
     "no-derived-state-effect": noDerivedStateEffect,
     "no-fetch-in-effect": noFetchInEffect,
+    "no-mirror-prop-effect": noMirrorPropEffect,
+    "no-mutable-in-deps": noMutableInDeps,
     "no-cascading-set-state": noCascadingSetState,
     "no-effect-chain": noEffectChain,
     "no-effect-event-handler": noEffectEventHandler,
@@ -220,6 +225,7 @@ const plugin: RulePlugin = {
     "rerender-state-only-in-handlers": rerenderStateOnlyInHandlers,
     "rerender-defer-reads-hook": rerenderDeferReadsHook,
     "advanced-event-handler-refs": advancedEventHandlerRefs,
+    "effect-needs-cleanup": effectNeedsCleanup,
 
     "no-generic-handler-names": noGenericHandlerNames,
     "no-giant-component": noGiantComponent,

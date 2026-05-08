@@ -135,6 +135,30 @@ const ConditionalSetStateInRenderComponent = ({ count }: { count: number }) => {
   return <h1>{prevCount}</h1>;
 };
 
+const EffectNeedsCleanupComponent = () => {
+  const [, setNow] = useState(0);
+  useEffect(() => {
+    setInterval(() => setNow(Date.now()), 1000);
+  }, []);
+  return <span />;
+};
+
+const MirrorPropEffectComponent = ({ value }: { value: string }) => {
+  const [draft, setDraft] = useState(value);
+  useEffect(() => {
+    setDraft(value);
+  }, [value]);
+  return <input value={draft} onChange={(event) => setDraft(event.target.value)} />;
+};
+
+const MutableInDepsComponent = ({ token }: { token: string }) => {
+  void token;
+  useEffect(() => {
+    document.title = location.pathname;
+  }, [location.pathname]);
+  return <div />;
+};
+
 declare const externalStore: {
   subscribe: (listener: () => void) => () => void;
   getSnapshot: () => number;
@@ -231,6 +255,9 @@ export {
   DirectStateMutationComponent,
   SetStateInRenderComponent,
   ConditionalSetStateInRenderComponent,
+  EffectNeedsCleanupComponent,
+  MirrorPropEffectComponent,
+  MutableInDepsComponent,
   SubscribeStorePatternComponent,
   EventTriggerStateComponent,
   EffectChainComponent,

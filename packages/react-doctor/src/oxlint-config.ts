@@ -230,6 +230,8 @@ const BUILTIN_A11Y_RULES: Record<string, RuleSeverity> = {
 export const GLOBAL_REACT_DOCTOR_RULES: Record<string, RuleSeverity> = {
   "react-doctor/no-derived-state-effect": "warn",
   "react-doctor/no-fetch-in-effect": "warn",
+  "react-doctor/no-mirror-prop-effect": "warn",
+  "react-doctor/no-mutable-in-deps": "error",
   "react-doctor/no-cascading-set-state": "warn",
   "react-doctor/no-effect-chain": "warn",
   "react-doctor/no-effect-event-handler": "warn",
@@ -247,6 +249,7 @@ export const GLOBAL_REACT_DOCTOR_RULES: Record<string, RuleSeverity> = {
   "react-doctor/rerender-state-only-in-handlers": "warn",
   "react-doctor/rerender-defer-reads-hook": "warn",
   "react-doctor/advanced-event-handler-refs": "warn",
+  "react-doctor/effect-needs-cleanup": "error",
 
   "react-doctor/no-giant-component": "warn",
   "react-doctor/no-render-in-render": "warn",

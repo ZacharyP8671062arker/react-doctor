@@ -10,6 +10,7 @@ import {
   EXTERNAL_SYNC_MEMBER_METHOD_NAMES,
   EXTERNAL_SYNC_OBSERVER_CONSTRUCTORS,
   HOOKS_WITH_DEPS,
+  MUTABLE_GLOBAL_ROOTS,
   MUTATING_ARRAY_METHODS,
   RELATED_USE_STATE_THRESHOLD,
   SUBSCRIPTION_METHOD_NAMES,
@@ -90,6 +91,15 @@ const collectValueIdentifierNames = (node: EsTreeNode | null | undefined, into: 
       collectValueIdentifierNames(child, into);
     }
   }
+};
+
+// HACK: barrier-frame predicate shared by every rule that pushes an
+// empty stack frame on a non-component arrow / function-expression
+// VariableDeclarator so closed-over names from an outer component
+// don't leak into the helper's prop check.
+const isFunctionLikeVariableDeclarator = (node: EsTreeNode): boolean => {
+  if (node.type !== "VariableDeclarator") return false;
+  return node.init?.type === "ArrowFunctionExpression" || node.init?.type === "FunctionExpression";
 };
 
 export const noDerivedStateEffect: Rule = {
@@ -386,13 +396,6 @@ export const noDerivedUseState: Rule = {
       return false;
     };
 
-    const isFunctionLikeVariableDeclarator = (node: EsTreeNode): boolean => {
-      if (node.type !== "VariableDeclarator") return false;
-      return (
-        node.init?.type === "ArrowFunctionExpression" || node.init?.type === "FunctionExpression"
-      );
-    };
-
     return {
       FunctionDeclaration(node: EsTreeNode) {
         if (!node.id?.name || !isUppercaseName(node.id.name)) {
@@ -565,6 +568,50 @@ export const rerenderFunctionalSetstate: Rule = {
           node,
           message: `${calleeName}(${display}) — use functional update to avoid stale closures (and reading the post-increment value bug)`,
         });
+        return;
+      }
+
+      // HACK: 'Removing Effect Dependencies' §"Are you reading some
+      // state to calculate the next state?" — the array/object spread
+      // shape is the most common stale-closure trap in
+      // subscription-handler / setInterval callbacks:
+      //
+      //   setMessages([...messages, receivedMessage]);   // stale
+      //   setMessages(msgs => [...msgs, receivedMessage]); // ok
+      //
+      // Detect when one of the spread sources structurally references
+      // the derived state variable: `setX([...x, ...])` or
+      // `setX({ ...x, key: value })`.
+      if (expectedStateName && argument.type === "ArrayExpression") {
+        const spreadsState = (argument.elements ?? []).some(
+          (element: EsTreeNode | null) =>
+            element?.type === "SpreadElement" &&
+            element.argument?.type === "Identifier" &&
+            element.argument.name === expectedStateName,
+        );
+        if (spreadsState) {
+          context.report({
+            node,
+            message: `${calleeName}([...${expectedStateName}, ...]) — use functional update \`${calleeName}(prev => [...prev, ...])\` to avoid stale closures`,
+          });
+          return;
+        }
+      }
+
+      if (expectedStateName && argument.type === "ObjectExpression") {
+        const spreadsState = (argument.properties ?? []).some(
+          (property: EsTreeNode | null) =>
+            property?.type === "SpreadElement" &&
+            property.argument?.type === "Identifier" &&
+            property.argument.name === expectedStateName,
+        );
+        if (spreadsState) {
+          context.report({
+            node,
+            message: `${calleeName}({ ...${expectedStateName}, ... }) — use functional update \`${calleeName}(prev => ({ ...prev, ... }))\` to avoid stale closures`,
+          });
+          return;
+        }
       }
     },
   }),
@@ -591,6 +638,19 @@ export const rerenderDependencies: Rule = {
             node: element,
             message:
               "Array literal in useEffect deps — creates new reference every render, causing infinite re-runs",
+          });
+        }
+        // HACK: arrow / function expressions create a fresh function
+        // reference every render, same problem as object/array literals.
+        // The fix is to either lift the function out of the component
+        // (if it doesn't read reactive values) or wrap it in
+        // `useCallback`. Covered by `Removing Effect Dependencies` §
+        // "Does some reactive value change unintentionally?".
+        if (element.type === "ArrowFunctionExpression" || element.type === "FunctionExpression") {
+          context.report({
+            node: element,
+            message:
+              "Inline function in useEffect deps — creates a new function reference every render, causing infinite re-runs. Hoist it out of the component or wrap it with useCallback",
           });
         }
       }
@@ -626,13 +686,6 @@ export const noPropCallbackInEffect: Rule = {
         if (frame.has(name)) return true;
       }
       return false;
-    };
-
-    const isFunctionLikeVariableDeclarator = (node: EsTreeNode): boolean => {
-      if (node.type !== "VariableDeclarator") return false;
-      return (
-        node.init?.type === "ArrowFunctionExpression" || node.init?.type === "FunctionExpression"
-      );
     };
 
     return {
@@ -2005,6 +2058,488 @@ export const noEffectChain: Rule = {
           });
         }
       }
+    };
+
+    return {
+      FunctionDeclaration(node: EsTreeNode) {
+        if (!node.id?.name || !isUppercaseName(node.id.name)) return;
+        checkComponent(node.body);
+      },
+      VariableDeclarator(node: EsTreeNode) {
+        if (!isComponentAssignment(node)) return;
+        checkComponent(node.init?.body);
+      },
+    };
+  },
+};
+
+// HACK: "Lifecycle of Reactive Effects" — Can global or mutable
+// values be dependencies? — calls out that `location.pathname`,
+// `ref.current`, and other mutable values can't be deps:
+//
+//   "Mutable values aren't reactive. Changing it wouldn't trigger
+//    a re-render, so even if you specified it in the dependencies,
+//    React wouldn't know to re-synchronize the Effect."
+//
+// We flag two shapes:
+//   (1) MemberExpression rooted in a known mutable global
+//       (location, window, document, navigator, history, ...) —
+//       e.g. `location.pathname`, `window.innerWidth`, `document.title`
+//   (2) MemberExpression `<x>.current` where `x` is a `useRef`
+//       binding declared in the same component
+//
+// Bare `location` / bare `useRef`-returned identifiers are NOT
+// flagged — those are themselves stable references; only their
+// mutable property reads are the bug.
+const collectUseRefBindingNames = (componentBody: EsTreeNode): Set<string> => {
+  const useRefBindings = new Set<string>();
+  if (componentBody?.type !== "BlockStatement") return useRefBindings;
+  for (const statement of componentBody.body ?? []) {
+    if (statement.type !== "VariableDeclaration") continue;
+    for (const declarator of statement.declarations ?? []) {
+      if (declarator.id?.type !== "Identifier") continue;
+      if (declarator.init?.type !== "CallExpression") continue;
+      if (!isHookCall(declarator.init, "useRef")) continue;
+      useRefBindings.add(declarator.id.name);
+    }
+  }
+  return useRefBindings;
+};
+
+const findMutableDepIssue = (
+  depElement: EsTreeNode,
+  useRefBindingNames: Set<string>,
+): { kind: "global" | "ref-current"; rootName: string } | null => {
+  if (depElement.type !== "MemberExpression") return null;
+
+  if (
+    depElement.property?.type === "Identifier" &&
+    depElement.property.name === "current" &&
+    !depElement.computed &&
+    depElement.object?.type === "Identifier" &&
+    useRefBindingNames.has(depElement.object.name)
+  ) {
+    return { kind: "ref-current", rootName: depElement.object.name };
+  }
+
+  let cursor: EsTreeNode | undefined = depElement;
+  while (cursor?.type === "MemberExpression") cursor = cursor.object;
+  if (cursor?.type === "Identifier" && MUTABLE_GLOBAL_ROOTS.has(cursor.name)) {
+    return { kind: "global", rootName: cursor.name };
+  }
+  return null;
+};
+
+// HACK: §1 of "You Might Not Need an Effect" — mirroring a prop into
+// local state with a useEffect that re-syncs it. The combined shape
+// is the most common form of derived-state-effect in real codebases:
+//
+//   function Form({ value }) {
+//     const [draft, setDraft] = useState(value);
+//     useEffect(() => { setDraft(value); }, [value]);
+//     // ...
+//   }
+//
+// Both `noDerivedStateEffect` and `noDerivedUseState` independently
+// nudge at parts of this. This rule produces a single, more
+// actionable diagnostic that names the prop and recommends deleting
+// both the useState and the effect.
+//
+// Detector pre-conditions:
+//   (1) `[X, setX] = useState(<propExpr>)` where <propExpr> is a
+//       prop Identifier or a MemberExpression rooted in a prop
+//   (2) `useEffect(() => setX(<propExpr'>), [<propRoot>])` where
+//       <propExpr'> is structurally identical to <propExpr> from (1)
+const arePropExpressionsStructurallyEqual = (
+  a: EsTreeNode | null | undefined,
+  b: EsTreeNode | null | undefined,
+): boolean => {
+  if (!a || !b) return a === b;
+  if (a.type !== b.type) return false;
+  if (a.type === "Identifier") return a.name === b.name;
+  if (a.type === "MemberExpression") {
+    if (a.computed !== b.computed) return false;
+    return (
+      arePropExpressionsStructurallyEqual(a.object, b.object) &&
+      arePropExpressionsStructurallyEqual(a.property, b.property)
+    );
+  }
+  return false;
+};
+
+const getPropRootName = (
+  expression: EsTreeNode | null | undefined,
+  propNames: Set<string>,
+): string | null => {
+  if (!expression) return null;
+  if (expression.type === "Identifier" && propNames.has(expression.name)) {
+    return expression.name;
+  }
+  if (expression.type === "MemberExpression") {
+    let cursor: EsTreeNode | undefined = expression;
+    while (cursor?.type === "MemberExpression") cursor = cursor.object;
+    if (cursor?.type === "Identifier" && propNames.has(cursor.name)) return cursor.name;
+  }
+  return null;
+};
+
+// HACK: From "Lifecycle of Reactive Effects":
+//
+//   "Each Effect describes a separate synchronization process. When
+//    the component is removed, your Effect needs to stop synchronizing.
+//    The cleanup function should stop or undo whatever the Effect was
+//    doing."
+//
+// An effect that adds a listener / subscribes / sets a timer but
+// returns no cleanup leaks memory and triggers React's "you forgot
+// to clean up an effect" StrictMode hint at runtime. We flag it
+// statically. Three subscribe-shaped families:
+//   - addEventListener (browser DOM, EventTarget-shaped libs)
+//   - subscribe / addListener / on / watch / listen / sub
+//   - setInterval / setTimeout (without explicit clear)
+const SUBSCRIBE_LIKE_METHOD_NAMES = new Set([
+  "addEventListener",
+  "subscribe",
+  "addListener",
+  "on",
+  "watch",
+  "listen",
+  "sub",
+]);
+
+const TIMER_CALLEE_NAMES_REQUIRING_CLEANUP = new Set(["setInterval", "setTimeout"]);
+
+const TIMER_CLEANUP_CALLEE_NAMES = new Set(["clearInterval", "clearTimeout"]);
+
+const UNSUBSCRIBE_LIKE_METHOD_NAMES = new Set([
+  "removeEventListener",
+  "unsubscribe",
+  "removeListener",
+  "off",
+  "unwatch",
+  "unlisten",
+  "unsub",
+]);
+
+interface SubscribeLikeUsage {
+  kind: "subscribe" | "timer";
+  resourceName: string;
+}
+
+const findSubscribeLikeUsages = (callback: EsTreeNode): SubscribeLikeUsage[] => {
+  const usages: SubscribeLikeUsage[] = [];
+  // HACK: timer/subscribe calls inside the EFFECT'S CLEANUP RETURN
+  // are not new registrations — they're the disposal step. The old
+  // walker traversed the full callback including any returned
+  // cleanup function, so a `setTimeout` inside `return () => { ... }`
+  // got counted as a usage. Detect and skip the cleanup ReturnStatement's
+  // argument body during the walk.
+  let cleanupArgument: EsTreeNode | null = null;
+  if (callback.body?.type === "BlockStatement") {
+    const stmts = callback.body.body ?? [];
+    const lastStmt = stmts[stmts.length - 1];
+    if (lastStmt?.type === "ReturnStatement" && lastStmt.argument) {
+      cleanupArgument = lastStmt.argument;
+    }
+  }
+
+  walkAst(callback, (child: EsTreeNode) => {
+    if (child === cleanupArgument) return false;
+    if (child.type !== "CallExpression") return;
+
+    if (
+      child.callee?.type === "Identifier" &&
+      TIMER_CALLEE_NAMES_REQUIRING_CLEANUP.has(child.callee.name)
+    ) {
+      usages.push({
+        kind: "timer",
+        resourceName: child.callee.name,
+      });
+      return;
+    }
+
+    if (
+      child.callee?.type === "MemberExpression" &&
+      child.callee.property?.type === "Identifier" &&
+      SUBSCRIBE_LIKE_METHOD_NAMES.has(child.callee.property.name)
+    ) {
+      usages.push({
+        kind: "subscribe",
+        resourceName: child.callee.property.name,
+      });
+    }
+  });
+  return usages;
+};
+
+const isSubscribeLikeCallExpression = (node: EsTreeNode): boolean => {
+  if (node?.type !== "CallExpression") return false;
+  if (node.callee?.type !== "MemberExpression") return false;
+  if (node.callee.property?.type !== "Identifier") return false;
+  return SUBSCRIBE_LIKE_METHOD_NAMES.has(node.callee.property.name);
+};
+
+const effectHasCleanupRelease = (callback: EsTreeNode): boolean => {
+  // HACK: expression-body arrows are the dominant shape for trivial
+  // subscribe-only effects:
+  //
+  //   useEffect(() => store.subscribe(handler), []);
+  //
+  // The arrow's expression body IS the body, and its evaluation
+  // result is implicitly returned as the effect's cleanup function.
+  // For subscribe-shaped calls we know the return value is the
+  // unsubscribe — accept this case before the BlockStatement-only
+  // checks below.
+  if (callback.body?.type !== "BlockStatement") {
+    return isSubscribeLikeCallExpression(callback.body);
+  }
+  const statements = callback.body.body ?? [];
+  const lastStatement = statements[statements.length - 1];
+  if (lastStatement?.type !== "ReturnStatement") return false;
+  const returnedValue = lastStatement.argument;
+  if (!returnedValue) return false;
+
+  if (returnedValue.type === "Identifier") return true;
+
+  if (isSubscribeLikeCallExpression(returnedValue)) return true;
+
+  if (
+    returnedValue.type !== "ArrowFunctionExpression" &&
+    returnedValue.type !== "FunctionExpression"
+  ) {
+    return false;
+  }
+
+  let didFindRelease = false;
+  walkAst(returnedValue, (child: EsTreeNode) => {
+    if (didFindRelease) return false;
+    if (child.type !== "CallExpression") return;
+    const callee = child.callee;
+    if (callee?.type === "Identifier" && TIMER_CLEANUP_CALLEE_NAMES.has(callee.name)) {
+      didFindRelease = true;
+      return;
+    }
+    if (
+      callee?.type === "MemberExpression" &&
+      callee.property?.type === "Identifier" &&
+      UNSUBSCRIBE_LIKE_METHOD_NAMES.has(callee.property.name)
+    ) {
+      didFindRelease = true;
+      return;
+    }
+    // Direct call to an Identifier whose name suggests an unsubscribe
+    // binding (e.g. `return () => unsubscribe()`). The set mirrors the
+    // method names recognized in UNSUBSCRIBE_LIKE_METHOD_NAMES so a
+    // `const unsub = store.subscribe(handler); return () => unsub();`
+    // shape is recognized as cleanup.
+    if (
+      callee?.type === "Identifier" &&
+      /^(unsubscribe|unsub|removeListener|removeEventListener|off|unwatch|unlisten|cleanup|dispose|destroy|teardown)$/i.test(
+        callee.name,
+      )
+    ) {
+      didFindRelease = true;
+    }
+  });
+  return didFindRelease;
+};
+
+export const effectNeedsCleanup: Rule = {
+  create: (context: RuleContext) => ({
+    CallExpression(node: EsTreeNode) {
+      if (!isHookCall(node, EFFECT_HOOK_NAMES)) return;
+      const callback = getEffectCallback(node);
+      if (!callback) return;
+
+      const usages = findSubscribeLikeUsages(callback);
+      if (usages.length === 0) return;
+
+      if (effectHasCleanupRelease(callback)) return;
+
+      const firstUsage = usages[0];
+      const verb = firstUsage.kind === "timer" ? "schedules" : "subscribes via";
+      const release =
+        firstUsage.kind === "timer"
+          ? `clear${firstUsage.resourceName === "setInterval" ? "Interval" : "Timeout"}(...)`
+          : "the matching remove/unsubscribe call";
+      context.report({
+        node,
+        message: `useEffect ${verb} \`${firstUsage.resourceName}(...)\` but never returns a cleanup — leaks the registration on every re-run and on unmount. Return a cleanup function that calls ${release}`,
+      });
+    },
+  }),
+};
+
+export const noMirrorPropEffect: Rule = {
+  create: (context: RuleContext) => {
+    const componentPropParamStack: Array<Set<string>> = [];
+
+    // HACK: empty frames pushed for non-component nested helpers act as
+    // barriers — `function Outer({ value }) { function Inner() { ... } }`
+    // must not leak `value` into Inner's prop set, even though Inner
+    // closes over it lexically. Walk top-down and stop at the first
+    // empty frame.
+    const getCurrentPropNames = (): Set<string> => {
+      for (let frameIndex = componentPropParamStack.length - 1; frameIndex >= 0; frameIndex--) {
+        const frame = componentPropParamStack[frameIndex];
+        if (frame.size === 0) return new Set();
+        return frame;
+      }
+      return new Set();
+    };
+
+    const checkComponent = (componentBody: EsTreeNode | null | undefined): void => {
+      if (!componentBody || componentBody.type !== "BlockStatement") return;
+      const propNames = getCurrentPropNames();
+      if (propNames.size === 0) return;
+
+      interface MirrorBinding {
+        valueName: string;
+        setterName: string;
+        initializer: EsTreeNode;
+        propRootName: string;
+      }
+      const mirrorBindings: MirrorBinding[] = [];
+
+      for (const statement of componentBody.body ?? []) {
+        if (statement.type !== "VariableDeclaration") continue;
+        for (const declarator of statement.declarations ?? []) {
+          if (declarator.id?.type !== "ArrayPattern") continue;
+          const elements = declarator.id.elements ?? [];
+          if (elements.length < 2) continue;
+          const valueElement = elements[0];
+          const setterElement = elements[1];
+          if (
+            valueElement?.type !== "Identifier" ||
+            setterElement?.type !== "Identifier" ||
+            !isSetterIdentifier(setterElement.name)
+          ) {
+            continue;
+          }
+          if (declarator.init?.type !== "CallExpression") continue;
+          if (!isHookCall(declarator.init, "useState")) continue;
+          const initializer = declarator.init.arguments?.[0];
+          if (!initializer) continue;
+          const propRootName = getPropRootName(initializer, propNames);
+          if (!propRootName) continue;
+          mirrorBindings.push({
+            valueName: valueElement.name,
+            setterName: setterElement.name,
+            initializer,
+            propRootName,
+          });
+        }
+      }
+
+      if (mirrorBindings.length === 0) return;
+
+      // HACK: only consider useEffects that are direct top-level
+      // statements of the component body. A useEffect inside a nested
+      // helper is a rules-of-hooks violation and isn't part of this
+      // component's surface — its outer prop set wouldn't apply
+      // anyway.
+      for (const statement of componentBody.body ?? []) {
+        if (statement.type !== "ExpressionStatement") continue;
+        const effectCall = statement.expression;
+        if (effectCall?.type !== "CallExpression") continue;
+        if (!isHookCall(effectCall, EFFECT_HOOK_NAMES)) continue;
+        if ((effectCall.arguments?.length ?? 0) < 2) continue;
+
+        const depsNode = effectCall.arguments[1];
+        if (depsNode.type !== "ArrayExpression") continue;
+        if ((depsNode.elements?.length ?? 0) !== 1) continue;
+        const depElement = depsNode.elements[0];
+        if (depElement?.type !== "Identifier") continue;
+
+        const callback = getEffectCallback(effectCall);
+        if (!callback) continue;
+        const bodyStatements = getCallbackStatements(callback);
+        if (bodyStatements.length !== 1) continue;
+        const onlyStatement = bodyStatements[0];
+        const expression =
+          onlyStatement.type === "ExpressionStatement" ? onlyStatement.expression : onlyStatement;
+        if (expression?.type !== "CallExpression") continue;
+        if (expression.callee?.type !== "Identifier") continue;
+        if (!isSetterIdentifier(expression.callee.name)) continue;
+        if (!expression.arguments?.length) continue;
+        const setterArgument = expression.arguments[0];
+
+        const matchedBinding = mirrorBindings.find(
+          (binding) =>
+            binding.setterName === expression.callee.name &&
+            binding.propRootName === depElement.name &&
+            arePropExpressionsStructurallyEqual(binding.initializer, setterArgument),
+        );
+        if (!matchedBinding) continue;
+
+        context.report({
+          node: effectCall,
+          message: `useState "${matchedBinding.valueName}" is mirrored from prop "${matchedBinding.propRootName}" via this effect — delete both the useState and the effect, and read the prop directly in render`,
+        });
+      }
+    };
+
+    return {
+      FunctionDeclaration(node: EsTreeNode) {
+        if (!node.id?.name || !isUppercaseName(node.id.name)) {
+          componentPropParamStack.push(new Set());
+          return;
+        }
+        componentPropParamStack.push(extractDestructuredPropNames(node.params ?? []));
+        checkComponent(node.body);
+      },
+      "FunctionDeclaration:exit"() {
+        componentPropParamStack.pop();
+      },
+      VariableDeclarator(node: EsTreeNode) {
+        if (isComponentAssignment(node)) {
+          componentPropParamStack.push(extractDestructuredPropNames(node.init?.params ?? []));
+          checkComponent(node.init?.body);
+          return;
+        }
+        if (isFunctionLikeVariableDeclarator(node)) {
+          componentPropParamStack.push(new Set());
+        }
+      },
+      "VariableDeclarator:exit"(node: EsTreeNode) {
+        if (isComponentAssignment(node) || isFunctionLikeVariableDeclarator(node)) {
+          componentPropParamStack.pop();
+        }
+      },
+    };
+  },
+};
+
+export const noMutableInDeps: Rule = {
+  create: (context: RuleContext) => {
+    const checkComponent = (componentBody: EsTreeNode | null | undefined): void => {
+      if (!componentBody || componentBody.type !== "BlockStatement") return;
+      const useRefBindingNames = collectUseRefBindingNames(componentBody);
+
+      walkAst(componentBody, (child: EsTreeNode) => {
+        if (child.type !== "CallExpression") return;
+        if (!isHookCall(child, HOOKS_WITH_DEPS)) return;
+        if ((child.arguments?.length ?? 0) < 2) return;
+        const depsNode = child.arguments[1];
+        if (depsNode.type !== "ArrayExpression") return;
+
+        for (const element of depsNode.elements ?? []) {
+          if (!element) continue;
+          const issue = findMutableDepIssue(element, useRefBindingNames);
+          if (!issue) continue;
+          if (issue.kind === "ref-current") {
+            context.report({
+              node: element,
+              message: `"${issue.rootName}.current" in deps — refs are mutable and don't trigger re-renders, so React won't re-run this effect when it changes. Read the ref inside the effect body instead`,
+            });
+          } else {
+            context.report({
+              node: element,
+              message: `Mutable global "${issue.rootName}.*" in deps — values like \`location.pathname\` can change without triggering a re-render, so they can't drive effect re-runs. Subscribe with useSyncExternalStore or read inside the effect`,
+            });
+          }
+        }
+      });
     };
 
     return {
