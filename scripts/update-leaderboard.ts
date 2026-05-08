@@ -38,13 +38,10 @@ const fetchLeaderboard = async (): Promise<LeaderboardFile> => {
 };
 
 const renderLeaderboardTable = (entries: LeaderboardEntry[]): string => {
-  const header = [
-    "| #  | Repo | Score | Errors | Warnings | Files |",
-    "| -- | ---- | ----: | -----: | -------: | ----: |",
-  ];
+  const header = ["| #  | Repo | Score |", "| -- | ---- | ----: |"];
   const rows = entries.slice(0, LEADERBOARD_TOP_COUNT).map((entry, innerIndex) => {
     const rank = String(innerIndex + 1).padEnd(2, " ");
-    return `| ${rank} | [${entry.name}](${entry.githubUrl}) | ${entry.score} | ${entry.errorCount} | ${entry.warningCount} | ${entry.fileCount} |`;
+    return `| ${rank} | [${entry.name}](${entry.githubUrl}) | ${entry.score} |`;
   });
   return [...header, ...rows].join("\n");
 };
