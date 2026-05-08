@@ -289,17 +289,18 @@ export const Settings = () => {
     expect(hits).toHaveLength(0);
   });
 
-  it("does NOT flag the article's GOOD network-cascade exception", async () => {
-    // The article explicitly notes that a chain of effects is appropriate
-    // when each effect synchronizes with the network. Each fetch-bearing
-    // effect is `isExternalSync = true` and thus exempt.
-    const projectDir = setupReactProject(tempRoot, "no-effect-chain-network", {
+  it("does NOT flag the article's GOOD network-cascade exception with a real write→dep chain", async () => {
+    // CRITICAL: this fixture has writes(A) = {cities} and deps(B) =
+    // {cities} — a real chain edge between the two effects. Without
+    // \`isExternalSync\` exempting both, the rule would fire. The
+    // test only passes if the fetch-bearing effects are correctly
+    // recognized as external sync.
+    const projectDir = setupReactProject(tempRoot, "no-effect-chain-network-real-chain", {
       files: {
         "src/ShippingForm.tsx": `import { useEffect, useState } from "react";
 
 export const ShippingForm = ({ country }: { country: string }) => {
   const [cities, setCities] = useState<string[] | null>(null);
-  const [city, setCity] = useState<string | null>(null);
   const [areas, setAreas] = useState<string[] | null>(null);
 
   useEffect(() => {
@@ -314,10 +315,12 @@ export const ShippingForm = ({ country }: { country: string }) => {
     };
   }, [country]);
 
+  // Real write→dep edge with the previous effect: depends on \`cities\`,
+  // which the previous effect wrote. Both effects are network sync.
   useEffect(() => {
-    if (city === null) return;
+    if (cities === null) return;
     let ignore = false;
-    fetch(\`/api/areas?city=\${city}\`)
+    fetch(\`/api/areas?cities=\${cities.join(",")}\`)
       .then((response) => response.json())
       .then((json) => {
         if (!ignore) setAreas(json);
@@ -325,14 +328,9 @@ export const ShippingForm = ({ country }: { country: string }) => {
     return () => {
       ignore = true;
     };
-  }, [city]);
+  }, [cities]);
 
-  return (
-    <select value={city ?? ""} onChange={(event) => setCity(event.target.value)}>
-      {cities?.map((entry) => <option key={entry}>{entry}</option>)}
-      {areas?.length}
-    </select>
-  );
+  return <span>{areas?.length}</span>;
 };
 `,
       },
@@ -342,33 +340,39 @@ export const ShippingForm = ({ country }: { country: string }) => {
     expect(hits).toHaveLength(0);
   });
 
-  it("does NOT flag a chat-connection effect even if it shares deps with another effect", async () => {
-    // External-system synchronization (createConnection().connect()) sets
-    // the upstream effect's `isExternalSync = true`, which exempts both
-    // sides of the would-be edge.
-    const projectDir = setupReactProject(tempRoot, "no-effect-chain-chat", {
+  it("does NOT flag a chat-connection chain when both effects do real external sync", async () => {
+    // CRITICAL: this fixture has Effect A writing \`status\` and
+    // Effect B depending on \`status\` — a real chain edge. Without
+    // \`isExternalSync\` exempting the createConnection().connect()
+    // / disconnect() effect on side A, the rule would fire.
+    const projectDir = setupReactProject(tempRoot, "no-effect-chain-chat-real-chain", {
       files: {
         "src/Chat.tsx": `import { useEffect, useState } from "react";
 
 declare const createConnection: (url: string) => {
-  connect: () => void;
+  connect: () => Promise<string>;
   disconnect: () => void;
 };
+declare const window: { addEventListener: (name: string, handler: () => void) => void; removeEventListener: (name: string, handler: () => void) => void };
 
 export const Chat = ({ roomId }: { roomId: string }) => {
-  const [messages, setMessages] = useState<string[]>([]);
+  const [status, setStatus] = useState("connecting");
 
   useEffect(() => {
     const connection = createConnection(roomId);
-    connection.connect();
+    connection.connect().then(setStatus);
     return () => connection.disconnect();
   }, [roomId]);
 
+  // Real write→dep edge with the previous effect: depends on \`status\`,
+  // which Effect A wrote. Effect B also does external sync (DOM listener).
   useEffect(() => {
-    setMessages([]);
-  }, [roomId]);
+    const onFocus = () => setStatus("connecting");
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [status]);
 
-  return <ul>{messages.map((line) => <li key={line}>{line}</li>)}</ul>;
+  return <span>{status}</span>;
 };
 `,
       },
@@ -443,52 +447,51 @@ export const Settings = () => {
     expect(hits.length).toBeGreaterThanOrEqual(1);
   });
 
-  it("does NOT flag a fetch-cascade where one effect uses `axios.get` (Bugbot #156)", async () => {
+  it("does NOT flag a real write→dep cascade where both effects use `axios.get` (Bugbot #156, real chain)", async () => {
     // Regression: previously \`get\` was missing from the external-sync
-    // member-method allowlist, so an \`axios.get(...)\` effect was
-    // classified as internal-only. Two such effects with state-flow
-    // dependence got flagged as a chain even though both were
-    // legitimately doing network sync.
-    const projectDir = setupReactProject(tempRoot, "no-effect-chain-axios-get-cascade", {
+    // allowlist, so axios.get() effects were classified as internal-
+    // only and a real write→dep chain between them got flagged.
+    //
+    // CRITICAL: this fixture has an actual write→dep chain. Effect A
+    // writes \`cities\`; Effect B has \`cities\` in its deps. Without
+    // \`isExternalSync\` exempting both, the chain detector WOULD fire
+    // — and previously did before the fix. The test only passes if
+    // axios.get is recognized as external sync on both effects.
+    const projectDir = setupReactProject(tempRoot, "no-effect-chain-axios-real-cascade", {
       files: {
         "src/Cascade.tsx": `import { useEffect, useState } from "react";
 
 declare const axios: { get: (url: string) => Promise<{ data: unknown }> };
 
 export const Cascade = ({ country }: { country: string }) => {
-  const [cities, setCities] = useState<unknown>(null);
-  const [city, setCity] = useState<string | null>(null);
-  const [areas, setAreas] = useState<unknown>(null);
+  const [cities, setCities] = useState<Array<string> | null>(null);
+  const [enriched, setEnriched] = useState<Array<string> | null>(null);
 
   useEffect(() => {
     let ignore = false;
     axios.get(\`/api/cities?country=\${country}\`).then((response) => {
-      if (!ignore) setCities(response.data);
+      if (!ignore) setCities(response.data as Array<string>);
     });
     return () => {
       ignore = true;
     };
   }, [country]);
 
+  // Real chain link: Effect B writes \`enriched\` based on \`cities\`
+  // (which Effect A wrote). Without isExternalSync, this is a clear
+  // \`writes(A) ∩ deps(B) = {cities}\` edge.
   useEffect(() => {
-    if (city === null) return;
+    if (cities === null) return;
     let ignore = false;
-    axios.get(\`/api/areas?city=\${city}\`).then((response) => {
-      if (!ignore) setAreas(response.data);
+    axios.get("/api/enrich").then((response) => {
+      if (!ignore) setEnriched(response.data as Array<string>);
     });
     return () => {
       ignore = true;
     };
-  }, [city]);
+  }, [cities]);
 
-  return (
-    <div>
-      <select value={city ?? ""} onChange={(event) => setCity(event.target.value)}>
-        {(cities as Array<string> | null)?.map((entry) => <option key={entry}>{entry}</option>)}
-      </select>
-      <span>{(areas as Array<string> | null)?.length}</span>
-    </div>
-  );
+  return <span>{enriched?.length}</span>;
 };
 `,
       },
