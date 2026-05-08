@@ -47,6 +47,9 @@ export const buildInitialState = (rootDirectory: string): AppState => ({
   errorMessage: null,
   exitRequested: false,
   helpVisible: false,
+  toastMessage: null,
+  toastTone: "info",
+  toastNonce: 0,
 });
 
 const updateStep = (
@@ -214,6 +217,13 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
     }
     case "select-workspace":
       return { ...state, selectedDirectory: action.directory };
+    case "set-toast":
+      return {
+        ...state,
+        toastMessage: action.message,
+        toastTone: action.tone ?? "info",
+        toastNonce: state.toastNonce + 1,
+      };
     case "request-exit":
       return { ...state, exitRequested: true };
     default:

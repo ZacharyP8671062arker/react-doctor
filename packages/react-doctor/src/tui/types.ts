@@ -57,6 +57,9 @@ export interface AppState {
   errorMessage: string | null;
   exitRequested: boolean;
   helpVisible: boolean;
+  toastMessage: string | null;
+  toastTone: "success" | "info" | "error";
+  toastNonce: number;
 }
 
 export interface GroupedRule {
@@ -85,6 +88,7 @@ export type AppAction =
   | { type: "set-workspace-packages"; packages: WorkspacePackage[] }
   | { type: "navigate-workspace"; delta: number }
   | { type: "select-workspace"; directory: string }
+  | { type: "set-toast"; message: string | null; tone?: "success" | "info" | "error" }
   | { type: "request-exit" };
 
 export interface CategoryBreakdown {

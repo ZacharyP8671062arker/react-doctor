@@ -1,14 +1,15 @@
 import { Box, Text } from "ink";
 
 const HELP_LINES: Array<{ key: string; description: string }> = [
-  { key: "d", description: "switch to diagnostics review" },
+  { key: "d", description: "switch to diagnostic review" },
   { key: "v", description: "switch to dashboard" },
   { key: "r", description: "rescan immediately" },
   { key: "w", description: "toggle watch mode" },
+  { key: "c", description: "copy the focused issue as agent-pasteable markdown" },
   { key: "↑ / ↓ / j / k", description: "navigate rules" },
   { key: "← / → / h / l", description: "navigate sites within a rule" },
   { key: "/", description: "filter diagnostics" },
-  { key: "esc", description: "exit filter / back to dashboard" },
+  { key: "esc", description: "exit filter / close help / back to dashboard" },
   { key: "?", description: "toggle this help" },
   { key: "q / ctrl-c", description: "quit" },
 ];
@@ -29,7 +30,7 @@ export const HelpOverlay = () => (
       ))}
     </Box>
     <Box marginTop={1}>
-      <Text color="gray">Press ? again to dismiss.</Text>
+      <Text color="gray">Press esc or ? to dismiss.</Text>
     </Box>
   </Box>
 );

@@ -2,6 +2,7 @@ import { Box, useApp, useInput } from "ink";
 import path from "node:path";
 import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
 import { discoverReactSubprojects, listWorkspacePackages } from "../utils/discover-project.js";
+import { TOAST_AUTO_DISMISS_MS } from "./constants.js";
 import { DashboardView } from "./components/dashboard-view.js";
 import { FilterInput } from "./components/filter-input.js";
 import { Header } from "./components/header.js";
@@ -9,9 +10,12 @@ import { HelpOverlay } from "./components/help-overlay.js";
 import { ProjectPicker } from "./components/project-picker.js";
 import { ReviewView } from "./components/review-view.js";
 import { StatusBar } from "./components/status-bar.js";
+import { Toast } from "./components/toast.js";
 import { runScanWithListener } from "./scan-controller.js";
 import { appReducer, buildInitialState } from "./store.js";
-import type { AppAction } from "./types.js";
+import type { AppAction, GroupedRule } from "./types.js";
+import { copyToClipboard } from "./utils/copy-to-clipboard.js";
+import { formatIssueAsMarkdown } from "./utils/format-issue-as-markdown.js";
 import { useTerminalSize } from "./utils/use-terminal-size.js";
 import { startWatcher, type WatcherHandle } from "./watcher.js";
 
@@ -139,12 +143,65 @@ export const App = ({
     dispatch({ type: "set-watching", watching: true });
   }, [triggerScan]);
 
+  const pickRuleForCopy = useCallback((appState: typeof state): GroupedRule | undefined => {
+    if (appState.viewMode === "review") {
+      return appState.groupedRules[appState.selectedRuleIndex];
+    }
+    return appState.groupedRules[0];
+  }, []);
+
+  const handleCopy = useCallback(async () => {
+    const currentState = stateRef.current;
+    const rule = pickRuleForCopy(currentState);
+    if (!rule) {
+      dispatch({ type: "set-toast", message: "Nothing to copy yet.", tone: "info" });
+      return;
+    }
+    const markdown = formatIssueAsMarkdown(rule, currentState.rootDirectory);
+    const result = await copyToClipboard(markdown);
+    if (result.ok) {
+      dispatch({
+        type: "set-toast",
+        message: `Copied diagnostic to clipboard (${result.via}).`,
+        tone: "success",
+      });
+      return;
+    }
+    if (result.fallbackPath) {
+      dispatch({
+        type: "set-toast",
+        message: `No clipboard found — wrote ${result.fallbackPath}.`,
+        tone: "info",
+      });
+      return;
+    }
+    dispatch({
+      type: "set-toast",
+      message: `Copy failed: ${result.error ?? "unknown error"}.`,
+      tone: "error",
+    });
+  }, [pickRuleForCopy]);
+
   useInput((rawInput, key) => {
     const currentState = stateRef.current;
 
     // Universal quit shortcut.
     if (key.ctrl && rawInput === "c") {
       dispatch({ type: "request-exit" });
+      return;
+    }
+
+    // Help overlay: only escape, ?, q, and ctrl-c work; everything else is
+    // swallowed so the user can't accidentally trigger an action while reading.
+    if (currentState.helpVisible) {
+      if (rawInput === "q") {
+        dispatch({ type: "request-exit" });
+        return;
+      }
+      if (key.escape || rawInput === "?") {
+        dispatch({ type: "toggle-help" });
+        return;
+      }
       return;
     }
 
@@ -205,6 +262,10 @@ export const App = ({
       toggleWatch();
       return;
     }
+    if (rawInput === "c") {
+      void handleCopy();
+      return;
+    }
     if (rawInput === "d") {
       dispatch({ type: "set-view", viewMode: "review" });
       return;
@@ -241,6 +302,14 @@ export const App = ({
     }
   });
 
+  useEffect(() => {
+    if (!state.toastMessage) return undefined;
+    const dismissTimer = setTimeout(() => {
+      dispatch({ type: "set-toast", message: null, tone: state.toastTone });
+    }, TOAST_AUTO_DISMISS_MS);
+    return () => clearTimeout(dismissTimer);
+  }, [state.toastNonce, state.toastMessage, state.toastTone]);
+
   const { columns, rows } = useTerminalSize();
 
   const headerDirectory = state.selectedDirectory ?? state.rootDirectory;
@@ -263,6 +332,7 @@ export const App = ({
         <DashboardView state={state} terminalColumns={columns} />
       )}
       {state.isFilterActive ? <FilterInput value={state.filterText} /> : null}
+      {state.toastMessage ? <Toast message={state.toastMessage} tone={state.toastTone} /> : null}
       {!isPickingProject ? (
         <StatusBar
           viewMode={state.viewMode}

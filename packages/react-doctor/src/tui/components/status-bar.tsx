@@ -14,6 +14,7 @@ interface StatusBarProps {
 
 const buildDashboardShortcuts = (isWatching: boolean): ShortcutHint[] => [
   { key: "d", label: "review" },
+  { key: "c", label: "copy issue" },
   { key: "r", label: "rescan" },
   { key: "w", label: `watch ${isWatching ? "on" : "off"}` },
   { key: "?", label: "help" },
@@ -23,6 +24,7 @@ const buildDashboardShortcuts = (isWatching: boolean): ShortcutHint[] => [
 const buildReviewShortcuts = (): ShortcutHint[] => [
   { key: "↑↓", label: "rule" },
   { key: "←→", label: "site" },
+  { key: "c", label: "copy" },
   { key: "/", label: "filter" },
   { key: "esc", label: "back" },
   { key: "q", label: "quit" },
