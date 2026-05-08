@@ -64,7 +64,16 @@ export const runTui = async (options: RunTuiOptions): Promise<void> => {
       startWatching={Boolean(options.watch)}
       preselectedProject={options.project}
     />,
-    { exitOnCtrlC: false },
+    {
+      exitOnCtrlC: false,
+      // HACK: alternate screen buffer is the same mechanism vim / htop / less
+      // use. Without it, Ink renders in the primary buffer, and when the
+      // dashboard grows between frames (initial scanning state -> populated
+      // results) the previous shorter frame can leave residue scrolled up
+      // out of the redraw region. Alternate screen guarantees clean
+      // in-place updates and restores the user's terminal contents on exit.
+      alternateScreen: true,
+    },
   );
   await renderInstance.waitUntilExit();
 };
