@@ -667,31 +667,40 @@ export const REACT_NATIVE_TEXT_COMPONENT_KEYWORDS = new Set([
   "Body",
 ]);
 
-export const DEPRECATED_RN_MODULE_REPLACEMENTS: Record<string, string> = {
-  AsyncStorage: "@react-native-async-storage/async-storage",
-  Picker: "@react-native-picker/picker",
-  PickerIOS: "@react-native-picker/picker",
-  DatePickerIOS: "@react-native-community/datetimepicker",
-  DatePickerAndroid: "@react-native-community/datetimepicker",
-  ProgressBarAndroid: "a community alternative",
-  ProgressViewIOS: "a community alternative",
-  SafeAreaView: "react-native-safe-area-context",
-  Slider: "@react-native-community/slider",
-  ViewPagerAndroid: "react-native-pager-view",
-  WebView: "react-native-webview",
-  NetInfo: "@react-native-community/netinfo",
-  CameraRoll: "@react-native-camera-roll/camera-roll",
-  Clipboard: "@react-native-clipboard/clipboard",
-  ImageEditor: "@react-native-community/image-editor",
-  MaskedViewIOS: "@react-native-masked-view/masked-view",
-};
+// HACK: Maps (not plain objects) so that an unusual `import { constructor }
+// from "react-native"` (or any other Object.prototype name) doesn't fall
+// through to `Object.prototype.constructor` and falsely report. Symmetric
+// with the deprecated-React-API rules in `architecture.ts`.
+export const DEPRECATED_RN_MODULE_REPLACEMENTS = new Map<string, string>([
+  ["AsyncStorage", "@react-native-async-storage/async-storage"],
+  ["Picker", "@react-native-picker/picker"],
+  ["PickerIOS", "@react-native-picker/picker"],
+  ["DatePickerIOS", "@react-native-community/datetimepicker"],
+  ["DatePickerAndroid", "@react-native-community/datetimepicker"],
+  ["ProgressBarAndroid", "a community alternative"],
+  ["ProgressViewIOS", "a community alternative"],
+  ["SafeAreaView", "react-native-safe-area-context"],
+  ["Slider", "@react-native-community/slider"],
+  ["ViewPagerAndroid", "react-native-pager-view"],
+  ["WebView", "react-native-webview"],
+  ["NetInfo", "@react-native-community/netinfo"],
+  ["CameraRoll", "@react-native-camera-roll/camera-roll"],
+  ["Clipboard", "@react-native-clipboard/clipboard"],
+  ["ImageEditor", "@react-native-community/image-editor"],
+  ["MaskedViewIOS", "@react-native-masked-view/masked-view"],
+]);
 
-export const LEGACY_EXPO_PACKAGE_REPLACEMENTS: Record<string, string> = {
-  "expo-av": "expo-audio for audio and expo-video for video",
-  "expo-permissions": "the permissions API in each module (e.g. Camera.requestPermissionsAsync())",
-  "@expo/vector-icons":
+export const LEGACY_EXPO_PACKAGE_REPLACEMENTS = new Map<string, string>([
+  ["expo-av", "expo-audio for audio and expo-video for video"],
+  [
+    "expo-permissions",
+    "the permissions API in each module (e.g. Camera.requestPermissionsAsync())",
+  ],
+  [
+    "@expo/vector-icons",
     "expo-symbols or expo-image (see https://docs.expo.dev/versions/latest/sdk/symbols/)",
-};
+  ],
+]);
 
 export const REACT_NATIVE_LIST_COMPONENTS = new Set([
   "FlatList",
@@ -743,6 +752,26 @@ export const HEAVY_HEADING_TAILWIND_WEIGHTS = new Set([
 ]);
 
 export const TAILWIND_DEFAULT_PALETTE_NAMES = ["indigo", "gray", "slate"];
+
+// HACK: the canonical Tailwind v3/v4 numeric color stops. Anchoring the
+// `design-no-default-tailwind-palette` regex to this exact set (rather
+// than `\d{2,3}`) avoids false-positiving on Radix Colors integrations
+// that map non-Tailwind stops onto Tailwind utilities (`text-gray-11`,
+// `text-gray-12`, `text-gray-10` are Radix scale numbers, not Tailwind
+// defaults — flagging them as "the Tailwind template default" is wrong).
+export const TAILWIND_DEFAULT_PALETTE_STOPS = [
+  "50",
+  "100",
+  "200",
+  "300",
+  "400",
+  "500",
+  "600",
+  "700",
+  "800",
+  "900",
+  "950",
+];
 
 export const TAILWIND_PALETTE_UTILITY_PREFIXES = [
   "text",

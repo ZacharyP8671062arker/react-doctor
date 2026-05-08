@@ -10,6 +10,7 @@ import {
   SOURCE_FILE_PATTERN,
 } from "../constants.js";
 import { batchIncludePaths } from "./batch-include-paths.js";
+import { canOxlintExtendConfig } from "./can-oxlint-extend-config.js";
 import { collectIgnorePatterns } from "./collect-ignore-patterns.js";
 import { detectUserLintConfigPaths } from "./detect-user-lint-config.js";
 import { ALL_REACT_DOCTOR_RULE_KEYS, createOxlintConfig } from "../oxlint-config.js";
@@ -622,6 +623,15 @@ const FILEPATH_WITH_LOCATION_PATTERN = /\S+\.\w+:\d+:\d+[\s\S]*$/;
 
 const REACT_COMPILER_MESSAGE = "React Compiler can't optimize this code";
 
+// HACK: `Object.hasOwn` guards against falling through to
+// `Object.prototype` when oxlint emits a rule whose name happens to
+// shadow a base Object property (`constructor`, `toString`, …). Without
+// the guard the rule's help text would render as
+// `function Object() { [native code] }`. Same defense applied to the
+// plugin-/rule-category lookups below.
+const lookupOwnString = (record: Record<string, string>, key: string): string | undefined =>
+  Object.hasOwn(record, key) ? record[key] : undefined;
+
 const cleanDiagnosticMessage = (
   message: string,
   help: string,
@@ -633,7 +643,7 @@ const cleanDiagnosticMessage = (
     return { message: REACT_COMPILER_MESSAGE, help: rawMessage || help };
   }
   const cleaned = message.replace(FILEPATH_WITH_LOCATION_PATTERN, "").trim();
-  return { message: cleaned || message, help: help || RULE_HELP_MAP[rule] || "" };
+  return { message: cleaned || message, help: help || lookupOwnString(RULE_HELP_MAP, rule) || "" };
 };
 
 const parseRuleCode = (code: string): { plugin: string; rule: string } => {
@@ -661,7 +671,11 @@ const resolvePluginPath = (): string => {
 
 const resolveDiagnosticCategory = (plugin: string, rule: string): string => {
   const ruleKey = `${plugin}/${rule}`;
-  return RULE_CATEGORY_MAP[ruleKey] ?? PLUGIN_CATEGORY_MAP[plugin] ?? "Other";
+  return (
+    lookupOwnString(RULE_CATEGORY_MAP, ruleKey) ??
+    lookupOwnString(PLUGIN_CATEGORY_MAP, plugin) ??
+    "Other"
+  );
 };
 
 // HACK: Sanitize child env so a developer's NODE_OPTIONS=--inspect (or
@@ -849,12 +863,14 @@ interface RunOxlintOptions {
   /**
    * Major version of React detected for the project. Forwarded to
    * `createOxlintConfig`, which gates rules directionally:
-   *   - `"deprecation-warning"` rules (e.g. `no-default-props`) stay
-   *     enabled when this is `null` so mid-migration projects still
-   *     get the warning even if version detection failed.
+   *   - `"deprecation-warning"` rules (e.g. `no-default-props`) fire on
+   *     every detected major — the audience that still allows the
+   *     pattern is the one planning the upgrade.
    *   - `"prefer-newer-api"` rules (e.g. `prefer-use-effect-event`) are
-   *     skipped when this is `null` to avoid recommending APIs that
-   *     may not exist in the consumer's React version.
+   *     skipped when this is a known major below the rule's minimum.
+   * When this is `null` (version detection failed) we optimistically
+   * apply EVERY rule, treating the project as if it were on the latest
+   * React major.
    */
   reactMajorVersion?: number | null;
   includePaths?: string[];
@@ -943,8 +959,15 @@ export const runOxlint = async (options: RunOxlintOptions): Promise<Diagnostic[]
   // accepts them and they're stable across runtimes. We skip extends
   // entirely under `customRulesOnly` because that mode opts out of
   // every rule outside the react-doctor plugin.
-  const extendsPaths =
+  const detectedConfigPaths =
     adoptExistingLintConfig && !customRulesOnly ? detectUserLintConfigPaths(rootDirectory) : [];
+  // HACK: filter out `.eslintrc.json` files whose `extends` lists only
+  // bare-package refs (`"next"`, `"airbnb"`, `"plugin:foo/bar"`). oxlint's
+  // resolver can't follow those — adopting them guarantees the parser
+  // crash + misleading "could not adopt existing lint config" warning.
+  // Drop them up front so the scan starts in the same state the fallback
+  // would land in, with no stderr noise.
+  const extendsPaths = detectedConfigPaths.filter(canOxlintExtendConfig);
   const config = createOxlintConfig({
     pluginPath,
     framework,

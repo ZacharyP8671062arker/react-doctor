@@ -213,18 +213,28 @@ export const noManyBooleanProps: Rule = {
 // AND member access on namespace/default imports (`React.forwardRef`,
 // `React.useContext` after `import React from "react"` or
 // `import * as React from "react"`).
-const REACT_19_DEPRECATED_MESSAGES: Record<string, string> = {
-  forwardRef:
+//
+// Stored as a Map (not a plain object) because plain-object lookups inherit
+// from `Object.prototype` — `messages["constructor"]` returns the native
+// `Object` function, which is truthy and would silently false-positive on
+// `import { constructor } from "react"` or `React.toString()`. Maps return
+// `undefined` for missing keys with no prototype fall-through.
+const REACT_19_DEPRECATED_MESSAGES = new Map<string, string>([
+  [
+    "forwardRef",
     "forwardRef is no longer needed on React 19+ — refs are regular props on function components; remove forwardRef and pass ref directly",
-  useContext:
+  ],
+  [
+    "useContext",
     "useContext is superseded by `use()` on React 19+ — `use()` reads context conditionally inside hooks, branches, and loops; switch to `import { use } from 'react'`",
-};
+  ],
+]);
 
 interface DeprecatedReactImportRuleOptions {
   /** The exact `import "..."` source string this rule watches. */
   source: string;
   /** Per-imported-name message dictionary. Exact-match lookup. */
-  messages: Record<string, string>;
+  messages: ReadonlyMap<string, string>;
   /**
    * Optional extra ImportDeclaration handler invoked BEFORE the standard
    * source check — used by the react-dom rule to flag every import from
@@ -262,7 +272,7 @@ const createDeprecatedReactImportRule = ({
           if (specifier.type === "ImportSpecifier") {
             const importedName = specifier.imported?.name;
             if (!importedName) continue;
-            const message = messages[importedName];
+            const message = messages.get(importedName);
             if (message) context.report({ node: specifier, message });
             continue;
           }
@@ -281,7 +291,7 @@ const createDeprecatedReactImportRule = ({
         if (node.object?.type !== "Identifier") return;
         if (!namespaceBindings.has(node.object.name)) return;
         if (node.property?.type !== "Identifier") return;
-        const message = messages[node.property.name];
+        const message = messages.get(node.property.name);
         if (message) context.report({ node, message });
       },
     };
@@ -437,16 +447,34 @@ export const reactCompilerDestructureMethod: Rule = {
 // the work away, and call them again. React 18.3.1 emits a warning;
 // React 19 REMOVES them entirely (the `UNSAFE_` prefix included). We
 // flag both forms so the prefix doesn't get treated as a permanent fix.
-const LEGACY_LIFECYCLE_REPLACEMENTS: Record<string, string> = {
-  componentWillMount:
+//
+// Stored as a Map (not a plain object) because plain-object lookups inherit
+// from `Object.prototype` — `LEGACY_LIFECYCLE_REPLACEMENTS["constructor"]`
+// returns the native `Object` function (truthy), which previously made the
+// rule false-positive on every class with a constructor (Lexical nodes,
+// MobX stores, custom Error subclasses, etc.). Maps return `undefined` for
+// missing keys with no prototype fall-through.
+const LEGACY_LIFECYCLE_REPLACEMENTS = new Map<string, string>([
+  [
+    "componentWillMount",
     "Move side effects to `componentDidMount`; move initial state to `constructor`",
-  componentWillReceiveProps:
+  ],
+  [
+    "componentWillReceiveProps",
     "Move side effects to `componentDidUpdate` (compare prevProps); move pure state derivation to the static `getDerivedStateFromProps`",
-  componentWillUpdate:
+  ],
+  [
+    "componentWillUpdate",
     "Move DOM reads to `getSnapshotBeforeUpdate` (passes the value to `componentDidUpdate`); move other work to `componentDidUpdate`",
-};
+  ],
+]);
 
-const stripUnsafePrefix = (name: string): { baseName: string; hasUnsafePrefix: boolean } => {
+interface UnsafePrefixSplit {
+  baseName: string;
+  hasUnsafePrefix: boolean;
+}
+
+const stripUnsafePrefix = (name: string): UnsafePrefixSplit => {
   if (name.startsWith("UNSAFE_")) {
     return { baseName: name.slice("UNSAFE_".length), hasUnsafePrefix: true };
   }
@@ -455,7 +483,7 @@ const stripUnsafePrefix = (name: string): { baseName: string; hasUnsafePrefix: b
 
 const buildLegacyLifecycleMessage = (originalName: string): string | null => {
   const { baseName, hasUnsafePrefix } = stripUnsafePrefix(originalName);
-  const replacement = LEGACY_LIFECYCLE_REPLACEMENTS[baseName];
+  const replacement = LEGACY_LIFECYCLE_REPLACEMENTS.get(baseName);
   if (!replacement) return null;
   const removalNote = hasUnsafePrefix
     ? `\`${originalName}\` is removed in React 19 (the UNSAFE_ prefix only silences the React 18 warning, it doesn't fix the concurrent-mode hazard).`
@@ -600,28 +628,36 @@ export const noDefaultProps: Rule = {
 // moved to `react` in 19. A whole-rule version gate (`>= 18`) can't
 // distinguish "still on 18" from "should have migrated" inside the
 // rule, so we drop the entry rather than false-positive on 18 code.
-const REACT_DOM_DEPRECATED_MESSAGES: Record<string, string> = {
-  render:
+const REACT_DOM_DEPRECATED_MESSAGES = new Map<string, string>([
+  [
+    "render",
     "ReactDOM.render is the legacy root API — switch to `import { createRoot } from 'react-dom/client'` and call `createRoot(container).render(...)` (REMOVED in React 19)",
-  hydrate:
+  ],
+  [
+    "hydrate",
     "ReactDOM.hydrate is the legacy SSR API — switch to `import { hydrateRoot } from 'react-dom/client'` and call `hydrateRoot(container, <App />)` (REMOVED in React 19)",
-  unmountComponentAtNode:
+  ],
+  [
+    "unmountComponentAtNode",
     "ReactDOM.unmountComponentAtNode no longer works on roots created with `createRoot` — keep a reference to the root and call `root.unmount()` instead (REMOVED in React 19)",
-  findDOMNode:
+  ],
+  [
+    "findDOMNode",
     "ReactDOM.findDOMNode crawls the rendered tree and breaks composition — accept a ref directly and read `ref.current` (REMOVED in React 19)",
-};
+  ],
+]);
 
-const REACT_DOM_TEST_UTILS_REPLACEMENTS: Record<string, string> = {
-  act: "`import { act } from 'react'` instead",
-  Simulate: "`fireEvent` from `@testing-library/react` instead",
-  renderIntoDocument: "`render` from `@testing-library/react` instead",
-  findRenderedDOMComponentWithTag: "`getByRole` / `getByTestId` from `@testing-library/react`",
-  findRenderedDOMComponentWithClass: "`getByRole` or `container.querySelector` from RTL",
-  scryRenderedDOMComponentsWithTag: "`getAllByRole` from `@testing-library/react`",
-};
+const REACT_DOM_TEST_UTILS_REPLACEMENTS = new Map<string, string>([
+  ["act", "`import { act } from 'react'` instead"],
+  ["Simulate", "`fireEvent` from `@testing-library/react` instead"],
+  ["renderIntoDocument", "`render` from `@testing-library/react` instead"],
+  ["findRenderedDOMComponentWithTag", "`getByRole` / `getByTestId` from `@testing-library/react`"],
+  ["findRenderedDOMComponentWithClass", "`getByRole` or `container.querySelector` from RTL"],
+  ["scryRenderedDOMComponentsWithTag", "`getAllByRole` from `@testing-library/react`"],
+]);
 
 const buildTestUtilsMessage = (importedName: string): string => {
-  const replacement = REACT_DOM_TEST_UTILS_REPLACEMENTS[importedName];
+  const replacement = REACT_DOM_TEST_UTILS_REPLACEMENTS.get(importedName);
   const replacementText = replacement
     ? `Use ${replacement}.`
     : "Switch to `act` from `react` or the equivalent in `@testing-library/react`.";

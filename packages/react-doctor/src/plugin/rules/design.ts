@@ -228,12 +228,18 @@ const isBackgroundDark = (bgValue: string): boolean => {
   );
 };
 
-const BORDER_SIDE_KEYS: Record<string, string> = {
-  borderLeft: "left",
-  borderRight: "right",
-  borderInlineStart: "left",
-  borderInlineEnd: "right",
-};
+// HACK: Map (not plain object) so the `key in BORDER_SIDE_KEYS` guard
+// below doesn't accept inherited Object.prototype names. Without this,
+// any inline style object whose key happens to be `constructor` /
+// `toString` / `hasOwnProperty` / `__proto__` would pass the membership
+// check and fall through to a garbage report message that reads off
+// `BORDER_SIDE_KEYS["constructor"]` (= the native Object function).
+const BORDER_SIDE_KEYS = new Map<string, string>([
+  ["borderLeft", "left"],
+  ["borderRight", "right"],
+  ["borderInlineStart", "left"],
+  ["borderInlineEnd", "right"],
+]);
 
 const BORDER_SIDE_WIDTH_KEYS = new Set([
   "borderLeftWidth",
@@ -390,7 +396,8 @@ export const noSideTabBorder: Rule = {
         const key = getStylePropertyKey(property);
         if (!key) continue;
 
-        if (key in BORDER_SIDE_KEYS) {
+        const sideLabel = BORDER_SIDE_KEYS.get(key);
+        if (sideLabel !== undefined) {
           const value = getStylePropertyStringValue(property);
           if (!value) continue;
           const widthMatch = value.match(/^(\d+)px\s+solid/);
@@ -403,7 +410,7 @@ export const noSideTabBorder: Rule = {
           if (width >= threshold) {
             context.report({
               node: property,
-              message: `Thick one-sided border (${BORDER_SIDE_KEYS[key]}: ${width}px) — the most recognizable tell of AI-generated UIs. Use a subtler accent or remove it`,
+              message: `Thick one-sided border (${sideLabel}: ${width}px) — the most recognizable tell of AI-generated UIs. Use a subtler accent or remove it`,
             });
           }
         }

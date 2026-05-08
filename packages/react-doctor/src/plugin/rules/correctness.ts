@@ -113,10 +113,14 @@ export const noArrayIndexAsKey: Rule = {
 // <button type="button"> would need attribute inspection plus form-scope
 // detection to be reliable; out of scope until we have evidence of real
 // false-negatives.
-const PREVENT_DEFAULT_ELEMENTS: Record<string, string[]> = {
-  form: ["onSubmit"],
-  a: ["onClick"],
-};
+// HACK: Map (not plain object) so a JSX tag named after an
+// Object.prototype property (`<constructor>`, `<toString>`) doesn't
+// fall through to a truthy `Object.prototype.X` value and crash on
+// `targetEventProps.includes(...)` later in the rule body.
+const PREVENT_DEFAULT_ELEMENTS = new Map<string, string[]>([
+  ["form", ["onSubmit"]],
+  ["a", ["onClick"]],
+]);
 
 const containsPreventDefaultCall = (node: EsTreeNode): boolean => {
   let didFindPreventDefault = false;
@@ -147,7 +151,7 @@ export const noPreventDefault: Rule = {
       const elementName = node.name?.type === "JSXIdentifier" ? node.name.name : null;
       if (!elementName) return;
 
-      const targetEventProps = PREVENT_DEFAULT_ELEMENTS[elementName];
+      const targetEventProps = PREVENT_DEFAULT_ELEMENTS.get(elementName);
       if (!targetEventProps) return;
 
       for (const targetEventProp of targetEventProps) {

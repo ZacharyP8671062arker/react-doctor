@@ -96,7 +96,7 @@ export const rnNoDeprecatedModules: Rule = {
         const importedName = specifier.imported?.name;
         if (!importedName) continue;
 
-        const replacement = DEPRECATED_RN_MODULE_REPLACEMENTS[importedName];
+        const replacement = DEPRECATED_RN_MODULE_REPLACEMENTS.get(importedName);
         if (!replacement) continue;
 
         context.report({
@@ -114,7 +114,7 @@ export const rnNoLegacyExpoPackages: Rule = {
       const source = node.source?.value;
       if (typeof source !== "string") return;
 
-      for (const [packageName, replacement] of Object.entries(LEGACY_EXPO_PACKAGE_REPLACEMENTS)) {
+      for (const [packageName, replacement] of LEGACY_EXPO_PACKAGE_REPLACEMENTS) {
         if (source === packageName || source.startsWith(`${packageName}/`)) {
           context.report({
             node,

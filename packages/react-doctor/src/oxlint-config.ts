@@ -383,14 +383,23 @@ export const ALL_REACT_DOCTOR_RULE_KEYS: ReadonlySet<string> = new Set([
 // project's detected React major. Adding a new version-gated rule means
 // touching just this map.
 //
-// `mode` controls behavior when version detection FAILS (null):
+// `mode` controls how the gate interacts with the detected React major:
 //   - "prefer-newer-api": the rule recommends an API that ONLY exists at
-//     or above `minMajor` (e.g. `useEffectEvent`). Suggesting it on a
-//     project where we can't prove the API exists is noise — fail closed.
-//   - "deprecation-warning": the rule flags patterns that BREAK at or
-//     above `minMajor` (e.g. `defaultProps` removal in React 19). Useful
-//     even on projects we can't version-detect, because the user may be
-//     mid-migration. Fail open.
+//     or above `minMajor` (e.g. `useEffectEvent`). Skipped when the
+//     project is on a known version below `minMajor` (recommending an
+//     API that demonstrably doesn't exist there is noise).
+//   - "deprecation-warning": the rule flags patterns that are removed
+//     at or above `minMajor` (e.g. `defaultProps` in React 19). The
+//     audience that benefits most is the version that still allows the
+//     pattern — fires on every detected major.
+//
+// When version detection FAILS (`reactMajorVersion === null`) we
+// optimistically assume the user is on the latest React major and
+// apply EVERY rule, including `prefer-newer-api` ones. Detection
+// failure is rare (custom resolvers, monorepo overrides, mid-clone
+// state); silently dropping rules in that path turned a missing
+// `react` entry into a quietly degraded scan. Better to recommend a
+// modern API and let the user reject it than to hide the suggestion.
 type VersionGateMode = "prefer-newer-api" | "deprecation-warning";
 interface VersionGate {
   minMajor: number;
@@ -423,7 +432,8 @@ const filterRulesByReactMajor = (
     Object.entries(rules).filter(([ruleKey]) => {
       const gate = VERSION_GATED_RULE_IDS.get(ruleKey);
       if (gate === undefined) return true;
-      if (reactMajorVersion === null) return gate.mode === "deprecation-warning";
+      if (gate.mode === "deprecation-warning") return true;
+      if (reactMajorVersion === null) return true;
       return reactMajorVersion >= gate.minMajor;
     }),
   );

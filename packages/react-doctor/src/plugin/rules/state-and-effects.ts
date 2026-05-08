@@ -2124,11 +2124,33 @@ const effectHasCleanupRelease = (callback: EsTreeNode): boolean => {
   if (callback.body?.type !== "BlockStatement") {
     return isSubscribeLikeCallExpression(callback.body);
   }
-  const statements = callback.body.body ?? [];
-  const lastStatement = statements[statements.length - 1];
-  if (lastStatement?.type !== "ReturnStatement") return false;
   const knownBoundReleaseNames = collectReleasableBindingNames(callback);
-  return isCleanupReturn(lastStatement.argument, knownBoundReleaseNames);
+  // HACK: scan ALL `return` statements at the effect's own function
+  // scope (skipping nested functions via `walkInsideStatementBlocks`),
+  // not just the top-level last statement. The last-statement check
+  // false-positives on the very common conditional-cleanup shape:
+  //
+  //   useEffect(() => {
+  //     if (!enabled) return;
+  //     const sub = subscribe(...);
+  //     if (someCondition) {
+  //       return () => sub();
+  //     }
+  //   }, [enabled]);
+  //
+  // Either accept the conditional cleanup as intentional, or risk
+  // ~36% FPs on real codebases (measured: react-grab, excalidraw,
+  // textarea/popover patterns). Accepting nested cleanup mirrors how
+  // exhaustive-deps treats branched returns: trust the author.
+  let didFindCleanupReturn = false;
+  walkInsideStatementBlocks(callback.body, (child: EsTreeNode) => {
+    if (didFindCleanupReturn) return;
+    if (child.type !== "ReturnStatement") return;
+    if (isCleanupReturn(child.argument, knownBoundReleaseNames)) {
+      didFindCleanupReturn = true;
+    }
+  });
+  return didFindCleanupReturn;
 };
 
 export const effectNeedsCleanup: Rule = {

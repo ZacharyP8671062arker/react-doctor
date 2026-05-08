@@ -1802,6 +1802,115 @@ export const Subscribe = () => {
     const hits = await collectRuleHits(projectDir, "effect-needs-cleanup");
     expect(hits).toHaveLength(0);
   });
+
+  // HACK: regression for the ~36% FP rate measured against
+  // react-grab/excalidraw/etc. The previous detector only inspected the
+  // top-level last statement; cleanup nested inside an `if` block was
+  // invisible. Real-world shape: gated subscription + early-return.
+  it("does NOT flag cleanup nested inside an `if` block (early-return guard pattern)", async () => {
+    const projectDir = setupReactProject(tempRoot, "effect-needs-cleanup-conditional-cleanup", {
+      files: {
+        "src/Popover.tsx": `import { useEffect } from "react";
+
+export const Popover = ({ isOpen }: { isOpen: boolean }) => {
+  useEffect(() => {
+    if (!isOpen) return;
+    const handler = () => {};
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [isOpen]);
+  return <span />;
+};
+`,
+      },
+    });
+
+    const hits = await collectRuleHits(projectDir, "effect-needs-cleanup");
+    expect(hits).toHaveLength(0);
+  });
+
+  it("does NOT flag cleanup that is the last statement *inside* a conditional branch", async () => {
+    const projectDir = setupReactProject(tempRoot, "effect-needs-cleanup-cleanup-in-if-branch", {
+      files: {
+        "src/Watcher.tsx": `import { useEffect } from "react";
+
+declare const enabled: boolean;
+declare const document: { addEventListener: (e: string, h: () => void) => void; removeEventListener: (e: string, h: () => void) => void };
+
+export const Watcher = () => {
+  useEffect(() => {
+    const handler = () => {};
+    if (enabled) {
+      document.addEventListener("scroll", handler);
+      return () => document.removeEventListener("scroll", handler);
+    }
+  }, []);
+  return <span />;
+};
+`,
+      },
+    });
+
+    const hits = await collectRuleHits(projectDir, "effect-needs-cleanup");
+    expect(hits).toHaveLength(0);
+  });
+
+  it("does NOT flag cleanup nested inside a try/finally", async () => {
+    const projectDir = setupReactProject(tempRoot, "effect-needs-cleanup-cleanup-in-try", {
+      files: {
+        "src/Subscribe.tsx": `import { useEffect } from "react";
+
+declare const store: { subscribe: (handler: () => void) => () => void };
+declare const handler: () => void;
+
+export const Subscribe = () => {
+  useEffect(() => {
+    try {
+      const unsub = store.subscribe(handler);
+      return () => unsub();
+    } catch {
+      // ignore
+    }
+  }, []);
+  return <span />;
+};
+`,
+      },
+    });
+
+    const hits = await collectRuleHits(projectDir, "effect-needs-cleanup");
+    expect(hits).toHaveLength(0);
+  });
+
+  // HACK: ensure the broader walk does NOT credit cleanup returns from a
+  // *nested* function expression (e.g. an inner callback) as the effect's
+  // own cleanup. The walker stops at function boundaries; this protects
+  // the bug fix from over-correcting.
+  it("DOES still flag when the only `return cleanup` is inside a nested callback (not the effect's body)", async () => {
+    const projectDir = setupReactProject(tempRoot, "effect-needs-cleanup-nested-fn-return", {
+      files: {
+        "src/Subscribe.tsx": `import { useEffect } from "react";
+
+declare const store: { subscribe: (handler: () => void) => () => void };
+declare const handler: () => void;
+
+export const Subscribe = () => {
+  useEffect(() => {
+    const make = () => {
+      const unsub = store.subscribe(handler);
+      return () => unsub();
+    };
+    make();
+  }, []);
+  return <span />;
+};
+`,
+      },
+    });
+
+    const hits = await collectRuleHits(projectDir, "effect-needs-cleanup");
+    expect(hits).toHaveLength(1);
+  });
 });
 
 describe("no-mirror-prop-effect", () => {
@@ -2667,14 +2776,14 @@ export const SearchInput = ({
     expect(hits[0].message).not.toContain("prefix");
   });
 
-  it("does NOT fire when reactMajorVersion is unknown (null) — `prefer-X` rules need the API to exist", async () => {
-    // Directional gating: `prefer-use-effect-event` recommends a
-    // React-19-only API. Without proof the project HAS the API,
-    // every diagnostic is invalid. See `filterRulesByReactMajor` in
-    // oxlint-config.ts (`VersionGateMode = "prefer-newer-api"`).
-    // `deprecation-warning`-mode rules (`no-react19-deprecated-apis`,
-    // `no-default-props`, `no-react-dom-deprecated-apis`) keep firing
-    // on unknown versions because they're useful during migration.
+  it("DOES fire when reactMajorVersion is unknown (null) — assume latest React, apply every rule", async () => {
+    // When detection fails (custom resolver, monorepo override, mid-clone
+    // state) we optimistically treat the project as if it were on the
+    // latest React major and apply every rule, including
+    // `prefer-newer-api` ones like `prefer-use-effect-event`. Hiding the
+    // suggestion would silently degrade the scan whenever React resolves
+    // through an unusual path. See `filterRulesByReactMajor` in
+    // oxlint-config.ts.
     const projectDir = setupReactProject(tempRoot, "prefer-use-effect-event-unknown-version", {
       files: {
         "src/SearchInput.tsx": `import { useEffect, useState } from "react";
@@ -2692,6 +2801,6 @@ export const SearchInput = ({ onSearch }: { onSearch: (q: string) => void }) => 
     });
 
     const hits = await collectRuleHits(projectDir, "prefer-use-effect-event", null);
-    expect(hits).toHaveLength(0);
+    expect(hits.length).toBeGreaterThanOrEqual(1);
   });
 });

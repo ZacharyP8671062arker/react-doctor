@@ -44,14 +44,13 @@ export const Debounced = ({ onChange }: { onChange: (value: string) => void }) =
     expect(preferUseEffectEventHits.length).toBeGreaterThanOrEqual(1);
   });
 
-  it("skips prefer-use-effect-event when the project's React version cannot be resolved (no react dep)", async () => {
-    // Symmetric guard: when the project has no React dependency the
-    // function throws before lint runs, so we synthesize a project
-    // with an unresolvable React version range. Its major can't be
-    // parsed, so `parseReactMajor` returns null and the prefer-newer-
-    // api rule should be skipped pessimistically — confirming the
-    // forward really is honoring the version-gate boundary.
-    const projectDir = setupReactProject(tempRoot, "diagnose-prefer-use-effect-event-skipped", {
+  it("STILL emits prefer-use-effect-event when the React version cannot be resolved (assume latest)", async () => {
+    // When the React major can't be parsed (custom resolver, git URL,
+    // workspace:* without a resolved manifest) we optimistically assume
+    // the latest React major and apply every rule, including the
+    // `prefer-newer-api` ones. Hiding the suggestion would silently
+    // degrade the scan whenever React resolves through an unusual path.
+    const projectDir = setupReactProject(tempRoot, "diagnose-prefer-use-effect-event-fallback", {
       reactVersion: "github:facebook/react",
       files: {
         "src/Debounced.tsx": `import { useEffect, useState } from "react";
@@ -72,6 +71,6 @@ export const Debounced = ({ onChange }: { onChange: (value: string) => void }) =
     const preferUseEffectEventHits = result.diagnostics.filter(
       (diagnostic) => diagnostic.rule === "prefer-use-effect-event",
     );
-    expect(preferUseEffectEventHits).toHaveLength(0);
+    expect(preferUseEffectEventHits.length).toBeGreaterThanOrEqual(1);
   });
 });
