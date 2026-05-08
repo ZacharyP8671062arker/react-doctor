@@ -1,9 +1,12 @@
 import { Box, useApp, useInput } from "ink";
-import { useCallback, useEffect, useReducer, useRef } from "react";
+import path from "node:path";
+import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
+import { discoverReactSubprojects, listWorkspacePackages } from "../utils/discover-project.js";
 import { DashboardView } from "./components/dashboard-view.js";
 import { FilterInput } from "./components/filter-input.js";
 import { Header } from "./components/header.js";
 import { HelpOverlay } from "./components/help-overlay.js";
+import { ProjectPicker } from "./components/project-picker.js";
 import { ReviewView } from "./components/review-view.js";
 import { StatusBar } from "./components/status-bar.js";
 import { runScanWithListener } from "./scan-controller.js";
@@ -16,9 +19,26 @@ interface AppProps {
   rootDirectory: string;
   initialMode: "dashboard" | "review";
   startWatching: boolean;
+  preselectedProject?: string;
 }
 
-export const App = ({ rootDirectory, initialMode, startWatching }: AppProps) => {
+const findPackageByNameOrBasename = (
+  packages: ReturnType<typeof listWorkspacePackages>,
+  query: string,
+): string | null => {
+  const matched = packages.find(
+    (workspacePackage) =>
+      workspacePackage.name === query || path.basename(workspacePackage.directory) === query,
+  );
+  return matched?.directory ?? null;
+};
+
+export const App = ({
+  rootDirectory,
+  initialMode,
+  startWatching,
+  preselectedProject,
+}: AppProps) => {
   const { exit } = useApp();
   const [state, dispatch] = useReducer(appReducer, rootDirectory, buildInitialState);
   const isScanInFlightRef = useRef(false);
@@ -26,12 +46,36 @@ export const App = ({ rootDirectory, initialMode, startWatching }: AppProps) => 
   const stateRef = useRef(state);
   stateRef.current = state;
 
-  const triggerScan = useCallback(() => {
+  const discoveredPackages = useMemo(() => {
+    const workspacePackages = listWorkspacePackages(rootDirectory);
+    if (workspacePackages.length > 0) return workspacePackages;
+    return discoverReactSubprojects(rootDirectory);
+  }, [rootDirectory]);
+
+  useEffect(() => {
+    dispatch({ type: "set-workspace-packages", packages: discoveredPackages });
+    if (preselectedProject) {
+      const matchedDirectory = findPackageByNameOrBasename(discoveredPackages, preselectedProject);
+      if (matchedDirectory) {
+        dispatch({ type: "select-workspace", directory: matchedDirectory });
+        return;
+      }
+    }
+    if (discoveredPackages.length === 0) {
+      dispatch({ type: "select-workspace", directory: rootDirectory });
+      return;
+    }
+    if (discoveredPackages.length === 1) {
+      dispatch({ type: "select-workspace", directory: discoveredPackages[0].directory });
+    }
+  }, [discoveredPackages, preselectedProject, rootDirectory]);
+
+  const triggerScan = useCallback((directoryToScan: string) => {
     if (isScanInFlightRef.current) return;
     isScanInFlightRef.current = true;
     dispatch({ type: "scan-started" });
     void runScanWithListener({
-      directory: rootDirectory,
+      directory: directoryToScan,
       options: { lint: true, deadCode: true, offline: false },
       listener: (controllerEvent) => {
         if (controllerEvent.type === "event" && controllerEvent.event) {
@@ -46,28 +90,31 @@ export const App = ({ rootDirectory, initialMode, startWatching }: AppProps) => 
         }
       },
     });
-  }, [rootDirectory]);
+  }, []);
 
   useEffect(() => {
     dispatch({ type: "set-view", viewMode: initialMode });
   }, [initialMode]);
 
   useEffect(() => {
-    triggerScan();
-  }, [triggerScan]);
+    if (state.selectedDirectory && state.scanCount === 0 && state.scanStatus === "idle") {
+      triggerScan(state.selectedDirectory);
+    }
+  }, [state.selectedDirectory, state.scanCount, state.scanStatus, triggerScan]);
 
   useEffect(() => {
-    if (!startWatching) return undefined;
+    if (!startWatching || !state.selectedDirectory) return undefined;
     dispatch({ type: "set-watching", watching: true });
-    const handle = startWatcher(rootDirectory, () => {
-      if (!isScanInFlightRef.current) triggerScan();
+    const targetDirectory = state.selectedDirectory;
+    const handle = startWatcher(targetDirectory, () => {
+      if (!isScanInFlightRef.current) triggerScan(targetDirectory);
     });
     watcherHandleRef.current = handle;
     return () => {
       void handle.close();
       watcherHandleRef.current = null;
     };
-  }, [rootDirectory, startWatching, triggerScan]);
+  }, [state.selectedDirectory, startWatching, triggerScan]);
 
   useEffect(() => {
     if (state.exitRequested) {
@@ -77,21 +124,52 @@ export const App = ({ rootDirectory, initialMode, startWatching }: AppProps) => 
   }, [state.exitRequested, exit]);
 
   const toggleWatch = useCallback(() => {
+    const targetDirectory = stateRef.current.selectedDirectory;
+    if (!targetDirectory) return;
     if (watcherHandleRef.current) {
       void watcherHandleRef.current.close();
       watcherHandleRef.current = null;
       dispatch({ type: "set-watching", watching: false });
       return;
     }
-    const handle = startWatcher(rootDirectory, () => {
-      if (!isScanInFlightRef.current) triggerScan();
+    const handle = startWatcher(targetDirectory, () => {
+      if (!isScanInFlightRef.current) triggerScan(targetDirectory);
     });
     watcherHandleRef.current = handle;
     dispatch({ type: "set-watching", watching: true });
-  }, [rootDirectory, triggerScan]);
+  }, [triggerScan]);
 
   useInput((rawInput, key) => {
     const currentState = stateRef.current;
+
+    // Universal quit shortcut.
+    if (key.ctrl && rawInput === "c") {
+      dispatch({ type: "request-exit" });
+      return;
+    }
+
+    // Project picker mode: only nav and enter / quit are meaningful.
+    if (!currentState.selectedDirectory && currentState.workspacePackages.length > 1) {
+      if (rawInput === "q") {
+        dispatch({ type: "request-exit" });
+        return;
+      }
+      if (key.upArrow || rawInput === "k") {
+        dispatch({ type: "navigate-workspace", delta: -1 });
+        return;
+      }
+      if (key.downArrow || rawInput === "j") {
+        dispatch({ type: "navigate-workspace", delta: 1 });
+        return;
+      }
+      if (key.return) {
+        const chosen = currentState.workspacePackages[currentState.workspaceCursor];
+        if (chosen) dispatch({ type: "select-workspace", directory: chosen.directory });
+        return;
+      }
+      return;
+    }
+
     if (currentState.isFilterActive) {
       if (key.escape) {
         dispatch({ type: "set-filter", text: "" });
@@ -111,10 +189,6 @@ export const App = ({ rootDirectory, initialMode, startWatching }: AppProps) => 
       }
       return;
     }
-    if (key.ctrl && rawInput === "c") {
-      dispatch({ type: "request-exit" });
-      return;
-    }
     if (rawInput === "q") {
       dispatch({ type: "request-exit" });
       return;
@@ -124,7 +198,7 @@ export const App = ({ rootDirectory, initialMode, startWatching }: AppProps) => 
       return;
     }
     if (rawInput === "r") {
-      triggerScan();
+      if (currentState.selectedDirectory) triggerScan(currentState.selectedDirectory);
       return;
     }
     if (rawInput === "w") {
@@ -169,10 +243,19 @@ export const App = ({ rootDirectory, initialMode, startWatching }: AppProps) => 
 
   const { columns, rows } = useTerminalSize();
 
+  const headerDirectory = state.selectedDirectory ?? state.rootDirectory;
+  const isPickingProject = !state.selectedDirectory && state.workspacePackages.length > 1;
+
   return (
     <Box flexDirection="column">
-      <Header rootDirectory={state.rootDirectory} />
-      {state.helpVisible ? (
+      <Header rootDirectory={headerDirectory} />
+      {isPickingProject ? (
+        <ProjectPicker
+          rootDirectory={state.rootDirectory}
+          packages={state.workspacePackages}
+          cursorIndex={state.workspaceCursor}
+        />
+      ) : state.helpVisible ? (
         <HelpOverlay />
       ) : state.viewMode === "review" ? (
         <ReviewView state={state} terminalColumns={columns} terminalRows={rows} />
@@ -180,11 +263,13 @@ export const App = ({ rootDirectory, initialMode, startWatching }: AppProps) => 
         <DashboardView state={state} terminalColumns={columns} />
       )}
       {state.isFilterActive ? <FilterInput value={state.filterText} /> : null}
-      <StatusBar
-        viewMode={state.viewMode}
-        isWatching={state.isWatching}
-        isFilterActive={state.isFilterActive}
-      />
+      {!isPickingProject ? (
+        <StatusBar
+          viewMode={state.viewMode}
+          isWatching={state.isWatching}
+          isFilterActive={state.isFilterActive}
+        />
+      ) : null}
     </Box>
   );
 };

@@ -5,6 +5,7 @@ import type {
   ScanResult,
   ScanStepId,
   ScoreResult,
+  WorkspacePackage,
 } from "../types.js";
 
 export type DoctorMood = "scanning" | "great" | "ok" | "bad" | "neutral" | "error";
@@ -30,6 +31,9 @@ export interface ScoreHistoryPoint {
 
 export interface AppState {
   rootDirectory: string;
+  selectedDirectory: string | null;
+  workspacePackages: WorkspacePackage[];
+  workspaceCursor: number;
   viewMode: ViewMode;
   scanStatus: ScanStatus;
   isWatching: boolean;
@@ -78,6 +82,9 @@ export type AppAction =
   | { type: "set-filter"; text: string }
   | { type: "toggle-filter"; active: boolean }
   | { type: "toggle-help" }
+  | { type: "set-workspace-packages"; packages: WorkspacePackage[] }
+  | { type: "navigate-workspace"; delta: number }
+  | { type: "select-workspace"; directory: string }
   | { type: "request-exit" };
 
 export interface CategoryBreakdown {

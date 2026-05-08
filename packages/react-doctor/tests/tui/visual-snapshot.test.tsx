@@ -1,10 +1,11 @@
 import { describe, it } from "vite-plus/test";
 import { render } from "ink-testing-library";
 import { DashboardView } from "../../src/tui/components/dashboard-view.js";
+import { ProjectPicker } from "../../src/tui/components/project-picker.js";
 import { ReviewView } from "../../src/tui/components/review-view.js";
 import { buildInitialState } from "../../src/tui/store.js";
 import type { AppState, GroupedRule } from "../../src/tui/types.js";
-import type { Diagnostic, ProjectInfo } from "../../src/types.js";
+import type { Diagnostic, ProjectInfo, WorkspacePackage } from "../../src/types.js";
 
 const SAMPLE_PROJECT: ProjectInfo = {
   rootDirectory: "/repo",
@@ -116,6 +117,21 @@ describe("visual snapshots", () => {
     const frame = lastFrame() ?? "";
     if (process.env.SNAPSHOT_LOG === "1") {
       process.stdout.write(`\n===== DASHBOARD NARROW =====\n${frame}\n=====================\n`);
+    }
+  });
+
+  it("logs the project picker frame", () => {
+    const samplePackages: WorkspacePackage[] = [
+      { name: "ami", directory: "/repo/packages/ami" },
+      { name: "admin", directory: "/repo/packages/admin" },
+      { name: "docs", directory: "/repo/packages/docs" },
+    ];
+    const { lastFrame } = render(
+      <ProjectPicker rootDirectory="/repo" packages={samplePackages} cursorIndex={1} />,
+    );
+    const frame = lastFrame() ?? "";
+    if (process.env.SNAPSHOT_LOG === "1") {
+      process.stdout.write(`\n===== PROJECT PICKER =====\n${frame}\n=========================\n`);
     }
   });
 

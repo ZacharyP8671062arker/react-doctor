@@ -696,6 +696,7 @@ program
 interface TuiSubcommandOptions {
   watch?: boolean;
   review?: boolean;
+  project?: string;
 }
 
 const launchTui = async (directory: string, tuiOptions: TuiSubcommandOptions): Promise<void> => {
@@ -708,6 +709,7 @@ const launchTui = async (directory: string, tuiOptions: TuiSubcommandOptions): P
       directory: path.resolve(directory),
       watch: tuiOptions.watch,
       review: tuiOptions.review,
+      project: tuiOptions.project,
     });
   } catch (error) {
     handleError(error);
@@ -720,6 +722,7 @@ program
   .argument("[directory]", "project directory to scan", ".")
   .option("--watch", "rescan automatically when source files change", false)
   .option("--review", "open straight into the diagnostic review screen", false)
+  .option("--project <name>", "preselect a workspace project (skips the picker)")
   .action(async (directory: string, options: TuiSubcommandOptions) => {
     await launchTui(directory, options);
   });

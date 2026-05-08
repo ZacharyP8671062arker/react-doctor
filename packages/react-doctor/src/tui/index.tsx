@@ -6,6 +6,7 @@ export interface RunTuiOptions {
   directory: string;
   watch?: boolean;
   review?: boolean;
+  project?: string;
 }
 
 const isInteractiveTty = (): boolean =>
@@ -25,6 +26,7 @@ export const runTui = async (options: RunTuiOptions): Promise<void> => {
       rootDirectory={path.resolve(options.directory)}
       initialMode={initialMode}
       startWatching={Boolean(options.watch)}
+      preselectedProject={options.project}
     />,
     { exitOnCtrlC: false },
   );

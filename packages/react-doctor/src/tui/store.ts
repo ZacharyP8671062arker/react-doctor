@@ -21,6 +21,9 @@ const cloneSteps = (): StepState[] => INITIAL_STEPS.map((step) => ({ ...step }))
 
 export const buildInitialState = (rootDirectory: string): AppState => ({
   rootDirectory,
+  selectedDirectory: null,
+  workspacePackages: [],
+  workspaceCursor: 0,
   viewMode: "dashboard",
   scanStatus: "idle",
   isWatching: false,
@@ -193,6 +196,24 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
       return { ...state, isFilterActive: action.active };
     case "toggle-help":
       return { ...state, helpVisible: !state.helpVisible };
+    case "set-workspace-packages":
+      return {
+        ...state,
+        workspacePackages: action.packages,
+        workspaceCursor: 0,
+      };
+    case "navigate-workspace": {
+      if (state.workspacePackages.length === 0) return state;
+      const nextCursor = clamp(
+        state.workspaceCursor + action.delta,
+        0,
+        state.workspacePackages.length - 1,
+      );
+      if (nextCursor === state.workspaceCursor) return state;
+      return { ...state, workspaceCursor: nextCursor };
+    }
+    case "select-workspace":
+      return { ...state, selectedDirectory: action.directory };
     case "request-exit":
       return { ...state, exitRequested: true };
     default:
