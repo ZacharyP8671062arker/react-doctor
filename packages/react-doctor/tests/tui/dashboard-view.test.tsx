@@ -50,7 +50,9 @@ const stateWithDiagnostics = (overrides: Partial<AppState> = {}): AppState => {
     category: "performance",
     message: "Avoid using array index as a React key.",
     help: "",
-    diagnostics: Array.from({ length: 5 }, () => buildDiagnostic({ severity: "warning" })),
+    diagnostics: Array.from({ length: 5 }, () =>
+      buildDiagnostic({ severity: "warning", category: "performance" }),
+    ),
   };
   return {
     ...baseState,
@@ -165,5 +167,43 @@ describe("DashboardView", () => {
       expect(typeof lastFrame()).toBe("string");
       unmount();
     }
+  });
+
+  it("shows a 'By category' overview chart above the focused issue when 2+ categories exist", () => {
+    const { lastFrame } = render(
+      <DashboardView state={stateWithDiagnostics()} terminalColumns={120} />,
+    );
+    const frame = stripAnsi(lastFrame() ?? "");
+    const categoryHeaderIndex = frame.indexOf("By category");
+    const focusedRuleIndex = frame.indexOf("react-doctor/no-fetch-in-effect");
+    expect(categoryHeaderIndex).toBeGreaterThanOrEqual(0);
+    expect(focusedRuleIndex).toBeGreaterThan(categoryHeaderIndex);
+  });
+
+  it("hides the category overview chart when there is only one category", () => {
+    const singleCategoryState = stateWithDiagnostics();
+    singleCategoryState.diagnostics = singleCategoryState.diagnostics.map((diagnostic) => ({
+      ...diagnostic,
+      category: "state-effects",
+    }));
+    const { lastFrame } = render(
+      <DashboardView state={singleCategoryState} terminalColumns={120} />,
+    );
+    const frame = stripAnsi(lastFrame() ?? "");
+    expect(frame).not.toContain("By category");
+  });
+
+  it("hides the category overview chart during the very first scan", () => {
+    const initial = buildInitialState("/repo");
+    const scanningState: AppState = {
+      ...initial,
+      project: SAMPLE_PROJECT,
+      scanStatus: "scanning",
+      scanCount: 0,
+      diagnostics: [],
+    };
+    const { lastFrame } = render(<DashboardView state={scanningState} terminalColumns={120} />);
+    const frame = stripAnsi(lastFrame() ?? "");
+    expect(frame).not.toContain("By category");
   });
 });

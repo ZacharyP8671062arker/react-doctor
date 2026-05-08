@@ -1,7 +1,12 @@
 import { Box, Text } from "ink";
-import { VERY_NARROW_LAYOUT_BREAKPOINT_COLS } from "../constants.js";
+import {
+  CATEGORY_BREAKDOWN_MIN_CATEGORIES,
+  VERY_NARROW_LAYOUT_BREAKPOINT_COLS,
+} from "../constants.js";
 import type { AppState } from "../types.js";
+import { computeCategoryBreakdown } from "../utils/category-breakdown.js";
 import { moodFromState } from "../utils/mood-from-state.js";
+import { CategoryBreakdown } from "./category-breakdown.js";
 import { CompactIssueList } from "./compact-issue-list.js";
 import { DoctorFace } from "./doctor-face.js";
 import { ErrorBanner } from "./error-banner.js";
@@ -39,6 +44,9 @@ export const DashboardView = ({ state, terminalColumns }: DashboardViewProps) =>
   const scoreBarWidth = computeScoreBarWidth(terminalColumns);
   const contentWidth = computeContentWidth(terminalColumns);
   const focusedRule = state.groupedRules[0];
+  const categoryBreakdown = computeCategoryBreakdown(state.diagnostics);
+  const showCategoryBreakdown =
+    !isInitialScan && categoryBreakdown.length >= CATEGORY_BREAKDOWN_MIN_CATEGORIES;
 
   if (state.scanStatus === "error" && state.errorMessage) {
     return (
@@ -82,6 +90,11 @@ export const DashboardView = ({ state, terminalColumns }: DashboardViewProps) =>
         </Box>
       ) : focusedRule ? (
         <Box flexDirection="column" marginTop={1}>
+          {showCategoryBreakdown ? (
+            <Box marginBottom={1}>
+              <CategoryBreakdown breakdown={categoryBreakdown} contentWidth={contentWidth} />
+            </Box>
+          ) : null}
           <FocusedIssue
             rule={focusedRule}
             rootDirectory={state.rootDirectory}
