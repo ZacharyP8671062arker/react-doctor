@@ -197,6 +197,29 @@ const counts = summarizeDiagnostics(result.diagnostics);
 
 `react-doctor/api` re-exports `JsonReport`, `JsonReportSummary`, `JsonReportProjectEntry`, `JsonReportMode`, plus the lower-level `buildJsonReport` and `buildJsonReportError` builders. See [`packages/react-doctor/src/api.ts`](https://github.com/millionco/react-doctor/blob/main/packages/react-doctor/src/api.ts) for the full types.
 
+## Leaderboard
+
+Top React codebases scanned by React Doctor, ranked by score. Updated automatically from [millionco/react-doctor-benchmarks](https://github.com/millionco/react-doctor-benchmarks).
+
+<!-- LEADERBOARD:START -->
+<!-- prettier-ignore -->
+| #  | Repo | Score | Errors | Warnings | Files |
+| -- | ---- | ----: | -----: | -------: | ----: |
+| 1  | [executor](https://github.com/RhysSullivan/executor) | 96 | 3 | 3 | 4 |
+| 2  | [nodejs.org](https://github.com/nodejs/nodejs.org) | 87 | 0 | 191 | 176 |
+| 3  | [tldraw](https://github.com/tldraw/tldraw) | 76 | 5 | 94 | 51 |
+| 4  | [t3code](https://github.com/pingdotgg/t3code) | 75 | 0 | 723 | 242 |
+| 5  | [mastra](https://github.com/mastra-ai/mastra) | 70 | 23 | 374 | 175 |
+| 6  | [excalidraw](https://github.com/excalidraw/excalidraw) | 69 | 1 | 497 | 156 |
+| 7  | [payload](https://github.com/payloadcms/payload) | 69 | 1 | 750 | 391 |
+| 8  | [better-auth](https://github.com/better-auth/better-auth) | 69 | 0 | 509 | 260 |
+| 9  | [rocket.chat](https://github.com/RocketChat/Rocket.Chat) | 67 | 38 | 567 | 394 |
+| 10 | [typebot](https://github.com/baptisteArno/typebot.io) | 66 | 2 | 315 | 175 |
+
+<!-- LEADERBOARD:END -->
+
+See the [full leaderboard](https://www.react.doctor/leaderboard) or the [raw results](https://github.com/millionco/react-doctor-benchmarks/tree/main/results).
+
 ## Resources & Contributing Back
 
 Want to try it out? Check out [the demo](https://react.doctor).
