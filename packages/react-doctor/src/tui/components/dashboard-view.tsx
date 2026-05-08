@@ -15,11 +15,17 @@ interface DashboardViewProps {
   terminalColumns: number;
 }
 
+const HORIZONTAL_PADDING_COLS = 2;
+const DOCTOR_FACE_AND_GUTTER_COLS = 9;
+
 const computeScoreBarWidth = (terminalColumns: number): number => {
-  if (terminalColumns < VERY_NARROW_LAYOUT_BREAKPOINT_COLS) return 18;
-  if (terminalColumns < 90) return 24;
-  return 30;
+  if (terminalColumns < VERY_NARROW_LAYOUT_BREAKPOINT_COLS) return 16;
+  if (terminalColumns < 90) return 22;
+  return 28;
 };
+
+const computeContentWidth = (terminalColumns: number): number =>
+  Math.max(30, terminalColumns - HORIZONTAL_PADDING_COLS - DOCTOR_FACE_AND_GUTTER_COLS);
 
 const NoIssuesNotice = () => (
   <Box paddingX={1} marginTop={1}>
@@ -31,6 +37,7 @@ export const DashboardView = ({ state, terminalColumns }: DashboardViewProps) =>
   const isInitialScan = state.scanStatus === "scanning" && state.scanCount === 0;
   const mood = moodFromState(state);
   const scoreBarWidth = computeScoreBarWidth(terminalColumns);
+  const contentWidth = computeContentWidth(terminalColumns);
   const focusedRule = state.groupedRules[0];
 
   if (state.scanStatus === "error" && state.errorMessage) {
@@ -75,10 +82,18 @@ export const DashboardView = ({ state, terminalColumns }: DashboardViewProps) =>
         </Box>
       ) : focusedRule ? (
         <Box flexDirection="column" marginTop={1}>
-          <FocusedIssue rule={focusedRule} rootDirectory={state.rootDirectory} />
+          <FocusedIssue
+            rule={focusedRule}
+            rootDirectory={state.rootDirectory}
+            contentWidth={contentWidth}
+          />
           {state.groupedRules.length > 1 ? (
             <Box marginTop={1}>
-              <CompactIssueList rules={state.groupedRules} excludeFirst />
+              <CompactIssueList
+                rules={state.groupedRules}
+                excludeFirst
+                contentWidth={contentWidth}
+              />
             </Box>
           ) : null}
         </Box>

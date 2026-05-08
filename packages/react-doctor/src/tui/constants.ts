@@ -25,6 +25,12 @@ export const NARROW_LAYOUT_BREAKPOINT_COLS = 90;
 
 export const VERY_NARROW_LAYOUT_BREAKPOINT_COLS = 60;
 
+// HACK: at less than ~90 cols, splitting the review screen into a
+// 40 / 60 master/detail row leaves both panes too narrow to show
+// rule keys without ugly mid-word wraps. Below this breakpoint, we
+// stack the panes vertically so each one gets the full width.
+export const REVIEW_STACK_BREAKPOINT_COLS = 90;
+
 export const TOP_ISSUES_COMPACT_LIMIT = 5;
 
 export const FOCUSED_ISSUE_HELP_MAX_CHARS = 120;

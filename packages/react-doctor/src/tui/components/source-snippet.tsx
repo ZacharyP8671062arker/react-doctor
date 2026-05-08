@@ -1,24 +1,22 @@
 import { Box, Text } from "ink";
 import type { SourceSnippetResult } from "../utils/read-source-snippet.js";
+import { truncateText } from "../utils/truncate-text.js";
 
 interface SourceSnippetProps {
   snippet: SourceSnippetResult;
-  rootDirectory: string;
+  maxLineWidth: number;
 }
 
 const padLineNumber = (lineNumber: number, maxDigits: number): string =>
   String(lineNumber).padStart(maxDigits);
 
-const truncateText = (text: string, maxLength: number): string => {
-  if (text.length <= maxLength) return text;
-  return `${text.slice(0, Math.max(0, maxLength - 1))}…`;
-};
+const LINE_PREFIX_OVERHEAD = 4;
 
-export const SourceSnippet = ({ snippet }: SourceSnippetProps) => {
+export const SourceSnippet = ({ snippet, maxLineWidth }: SourceSnippetProps) => {
   if (snippet.errorMessage) {
     return (
       <Box>
-        <Text color="gray">[unable to read snippet: {snippet.errorMessage}]</Text>
+        <Text color="gray">[unable to read snippet]</Text>
       </Box>
     );
   }
@@ -30,6 +28,7 @@ export const SourceSnippet = ({ snippet }: SourceSnippetProps) => {
     );
   }
   const maxDigits = String(snippet.endLine).length;
+  const sourceTextBudget = Math.max(8, maxLineWidth - maxDigits - LINE_PREFIX_OVERHEAD);
   return (
     <Box flexDirection="column">
       {snippet.lines.map((line) => {
@@ -40,7 +39,7 @@ export const SourceSnippet = ({ snippet }: SourceSnippetProps) => {
             <Text color={isHighlighted ? "red" : "gray"}>{indicator}</Text>
             <Text color="gray"> {padLineNumber(line.lineNumber, maxDigits)} │ </Text>
             <Text color={isHighlighted ? "white" : "gray"} bold={isHighlighted}>
-              {truncateText(line.text, 80)}
+              {truncateText(line.text, sourceTextBudget)}
             </Text>
           </Box>
         );

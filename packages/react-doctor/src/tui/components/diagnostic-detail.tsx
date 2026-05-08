@@ -4,18 +4,24 @@ import type { GroupedRule } from "../types.js";
 import { colorForSeverity, symbolForSeverity } from "../utils/color-for-severity.js";
 import { readSourceSnippet } from "../utils/read-source-snippet.js";
 import { toRelativePath } from "../utils/relative-path.js";
+import { truncatePath } from "../utils/truncate-path.js";
+import { truncateText } from "../utils/truncate-text.js";
 import { SourceSnippet } from "./source-snippet.js";
 
 interface DiagnosticDetailProps {
   rule: GroupedRule | undefined;
   selectedSiteIndex: number;
   rootDirectory: string;
+  paneWidth: number;
 }
+
+const PANE_PADDING_COLS = 2;
 
 export const DiagnosticDetail = ({
   rule,
   selectedSiteIndex,
   rootDirectory,
+  paneWidth,
 }: DiagnosticDetailProps) => {
   const selectedDiagnostic = rule?.diagnostics[selectedSiteIndex];
   const snippet = useMemo(() => {
@@ -31,12 +37,17 @@ export const DiagnosticDetail = ({
     );
   }
 
+  const textWidth = Math.max(20, paneWidth - PANE_PADDING_COLS);
+  const ruleHeaderWidth = Math.max(20, textWidth - 2);
+  const truncatedRuleKey = truncateText(rule.ruleKey, ruleHeaderWidth);
+
   return (
     <Box flexDirection="column">
       <Box>
         <Text color={colorForSeverity(rule.severity)}>{symbolForSeverity(rule.severity)} </Text>
-        <Text bold>{rule.ruleKey}</Text>
-        <Text color="gray"> </Text>
+        <Text bold>{truncatedRuleKey}</Text>
+      </Box>
+      <Box>
         <Text color="gray">
           {rule.severity} · {rule.category || "uncategorized"}
         </Text>
@@ -57,14 +68,20 @@ export const DiagnosticDetail = ({
               {selectedSiteIndex + 1}
             </Text>
             <Text color="gray"> / {rule.diagnostics.length} </Text>
+          </Box>
+          <Box>
             <Text color="cyan">
-              {toRelativePath(selectedDiagnostic.filePath, rootDirectory)}
-              {selectedDiagnostic.line > 0 ? `:${selectedDiagnostic.line}` : ""}
+              {truncatePath(
+                `${toRelativePath(selectedDiagnostic.filePath, rootDirectory)}${
+                  selectedDiagnostic.line > 0 ? `:${selectedDiagnostic.line}` : ""
+                }`,
+                textWidth,
+              )}
             </Text>
           </Box>
           {snippet ? (
             <Box marginTop={1}>
-              <SourceSnippet snippet={snippet} rootDirectory={rootDirectory} />
+              <SourceSnippet snippet={snippet} maxLineWidth={textWidth} />
             </Box>
           ) : null}
           {selectedDiagnostic.suppressionHint ? (

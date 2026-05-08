@@ -1,12 +1,18 @@
 import { Box, Text } from "ink";
 import type { GroupedRule } from "../types.js";
 import { colorForSeverity, symbolForSeverity } from "../utils/color-for-severity.js";
+import { truncateText } from "../utils/truncate-text.js";
 
 interface DiagnosticListProps {
   rules: GroupedRule[];
   selectedIndex: number;
   viewportHeight: number;
+  paneWidth: number;
 }
+
+const CURSOR_COLUMNS = 2;
+const SEVERITY_COLUMNS = 2;
+const COUNT_SUFFIX_PADDING = 2;
 
 const computeViewportSlice = (
   totalRules: number,
@@ -20,7 +26,12 @@ const computeViewportSlice = (
   return { startIndex, endIndex: startIndex + viewportHeight };
 };
 
-export const DiagnosticList = ({ rules, selectedIndex, viewportHeight }: DiagnosticListProps) => {
+export const DiagnosticList = ({
+  rules,
+  selectedIndex,
+  viewportHeight,
+  paneWidth,
+}: DiagnosticListProps) => {
   if (rules.length === 0) {
     return (
       <Box paddingX={1}>
@@ -41,18 +52,28 @@ export const DiagnosticList = ({ rules, selectedIndex, viewportHeight }: Diagnos
         const isSelected = ruleAbsoluteIndex === selectedIndex;
         const severityColor = colorForSeverity(rule.severity);
         const severitySymbol = symbolForSeverity(rule.severity);
+        const countSuffix = ` (${rule.diagnostics.length})`;
+        const ruleNameBudget = Math.max(
+          4,
+          paneWidth - CURSOR_COLUMNS - SEVERITY_COLUMNS - countSuffix.length - COUNT_SUFFIX_PADDING,
+        );
+        const truncatedRuleKey = truncateText(rule.ruleKey, ruleNameBudget);
         return (
           <Box key={rule.ruleKey}>
-            <Text color={isSelected ? "cyan" : "gray"}>{isSelected ? "▶ " : "  "}</Text>
+            <Text color={isSelected ? "cyan" : "gray"}>{isSelected ? "▸ " : "  "}</Text>
             <Text color={severityColor}>{severitySymbol} </Text>
             <Text color={isSelected ? "white" : undefined} bold={isSelected}>
-              {rule.ruleKey}
+              {truncatedRuleKey}
             </Text>
-            <Text color="gray"> ({rule.diagnostics.length})</Text>
+            <Text color="gray">{countSuffix}</Text>
           </Box>
         );
       })}
-      {endIndex < rules.length ? <Text color="gray"> ↓ {rules.length - endIndex} more</Text> : null}
+      {endIndex < rules.length ? (
+        <Box>
+          <Text color="gray"> ↓ {rules.length - endIndex} more</Text>
+        </Box>
+      ) : null}
     </Box>
   );
 };
