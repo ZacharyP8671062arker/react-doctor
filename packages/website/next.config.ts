@@ -1,6 +1,19 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  headers: async () => {
+    return [
+      {
+        source: "/",
+        headers: [
+          {
+            key: "Vary",
+            value: "Accept",
+          },
+        ],
+      },
+    ];
+  },
   rewrites: async () => {
     return {
       beforeFiles: [
