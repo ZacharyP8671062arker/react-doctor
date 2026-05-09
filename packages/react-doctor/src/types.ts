@@ -256,6 +256,34 @@ export interface ReactDoctorConfig {
    */
   respectInlineDisables?: boolean;
   /**
+   * Whether to auto-suppress rules that fire on patterns tests
+   * legitimately exercise — array-index keys in fixture rows, oversize
+   * fixture components, intentional `forwardRef` / `defaultProps` /
+   * `flushSync` assertions, design-system spot checks, etc. Default:
+   * `true`. Detection is by path shape: `.test.*` / `.spec.*` /
+   * `.stories.*` files and anything under `__tests__` / `tests` /
+   * `test` / `__mocks__` / `cypress` / `e2e` / `playwright`. The
+   * specific rule set is curated for "noise-in-fixtures" — correctness
+   * rules (`rules-of-hooks`, `effect-needs-cleanup`, the React
+   * Compiler rules, …) keep firing because a buggy test is still a
+   * bug. Set `false` to score test files under the full production
+   * rule set; combine with `ignore.overrides` for per-file control.
+   */
+  suppressNoiseRulesInTestFiles?: boolean;
+  /**
+   * Whether to auto-suppress `knip/files` (unused-source-file) on
+   * source files that have a matching artifact under a common build
+   * directory (`dist`, `build`, `lib`, `out`, `esm`, `cjs`). Library
+   * entry points (CLI scripts, web/service workers, additional bundle
+   * entries) aren't imported by other source files — they're consumed
+   * via the build output — so flagging them as dead code is a false
+   * positive. Default: `true`. Set `false` to flag every unimported
+   * source file regardless. Requires the project to have been built
+   * (no artifact → still flagged); pre-build runs are unaffected by
+   * the suppression.
+   */
+  suppressDeadCodeForBuildEntries?: boolean;
+  /**
    * Whether to merge the user's existing JSON oxlint / eslint config
    * (`.oxlintrc.json` or `.eslintrc.json`) into the generated scan via
    * oxlint's `extends` field, so diagnostics from those rules count

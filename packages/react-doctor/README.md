@@ -23,7 +23,7 @@ Run this at your project root:
 npx -y react-doctor@latest .
 ```
 
-You'll get a score (75+ Great, 50 to 74 Needs work, under 50 Critical) and a list of issues across state & effects, performance, architecture, security, accessibility, and dead code. Rules toggle automatically based on your framework and React version. Libraries that declare `react` as a peer dep with a range admitting React < 19 also skip the React 19 deprecation rules (`forwardRef`, `defaultProps`, legacy `react-dom` root API) since those APIs are required to honor the peer contract.
+You'll get a score (75+ Great, 50 to 74 Needs work, under 50 Critical) and a list of issues across state & effects, performance, architecture, security, accessibility, and dead code. Rules toggle automatically based on your framework and React version. Libraries that declare `react` as a peer dep with a range admitting React < 19 also skip the React 19 deprecation rules (`forwardRef`, `defaultProps`, legacy `react-dom` root API) since those APIs are required to honor the peer contract. Test files (`*.test.*`, `*.spec.*`, `*.stories.*`, anything under `__tests__` / `tests` / `test` / `__mocks__` / `cypress` / `e2e` / `playwright`) skip the production-quality rules that fixtures legitimately exercise — correctness rules still fire because a buggy test is still a bug. Library entry points (source files with a matching artifact under `dist` / `build` / `lib` / `out` / `esm` / `cjs`) aren't flagged as dead code even when no other source file imports them.
 
 https://github.com/user-attachments/assets/07cc88d9-9589-44c3-aa73-5d603cb1c570
 
@@ -77,6 +77,8 @@ Create a `react-doctor.config.json` in your project root:
 React Doctor respects `.gitignore`, `.eslintignore`, `.oxlintignore`, `.prettierignore`, and `linguist-vendored` / `linguist-generated` annotations in `.gitattributes`. Inline `// eslint-disable*` and `// oxlint-disable*` comments are honored too.
 
 If you have a JSON oxlint or eslint config (`.oxlintrc.json` or `.eslintrc.json`), its rules get merged into the scan automatically and count toward the score. Set `adoptExistingLintConfig: false` to opt out.
+
+Set `suppressNoiseRulesInTestFiles: false` to score test files under the full production rule set (default: test files skip rules like `no-array-index-as-key`, `no-giant-component`, the React 19 deprecation warnings, etc. — correctness rules still fire). Set `suppressDeadCodeForBuildEntries: false` to flag every unimported source file regardless of whether a matching built artifact exists (default: source files with a matching `dist`/`build`/`lib`/`out`/`esm`/`cjs` output are treated as library entry points, not dead code).
 
 ### Inline suppressions
 
