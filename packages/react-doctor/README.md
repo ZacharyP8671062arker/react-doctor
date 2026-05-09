@@ -160,21 +160,26 @@ When a suppression isn't working, `--explain <file:line>` reports what the scann
 
 ### Config keys
 
-| Key                       | Type                             | Default  |
-| ------------------------- | -------------------------------- | -------- |
-| `ignore.rules`            | `string[]`                       | `[]`     |
-| `ignore.files`            | `string[]`                       | `[]`     |
-| `ignore.overrides`        | `{ files, rules? }[]`            | `[]`     |
-| `lint`                    | `boolean`                        | `true`   |
-| `deadCode`                | `boolean`                        | `true`   |
-| `verbose`                 | `boolean`                        | `false`  |
-| `diff`                    | `boolean \| string`              |          |
-| `failOn`                  | `"error" \| "warning" \| "none"` | `"none"` |
-| `customRulesOnly`         | `boolean`                        | `false`  |
-| `share`                   | `boolean`                        | `true`   |
-| `textComponents`          | `string[]`                       | `[]`     |
-| `respectInlineDisables`   | `boolean`                        | `true`   |
-| `adoptExistingLintConfig` | `boolean`                        | `true`   |
+| Key                        | Type                             | Default  |
+| -------------------------- | -------------------------------- | -------- |
+| `ignore.rules`             | `string[]`                       | `[]`     |
+| `ignore.files`             | `string[]`                       | `[]`     |
+| `ignore.overrides`         | `{ files, rules? }[]`            | `[]`     |
+| `lint`                     | `boolean`                        | `true`   |
+| `deadCode`                 | `boolean`                        | `true`   |
+| `verbose`                  | `boolean`                        | `false`  |
+| `diff`                     | `boolean \| string`              |          |
+| `failOn`                   | `"error" \| "warning" \| "none"` | `"none"` |
+| `customRulesOnly`          | `boolean`                        | `false`  |
+| `share`                    | `boolean`                        | `true`   |
+| `textComponents`           | `string[]`                       | `[]`     |
+| `rawTextWrapperComponents` | `string[]`                       | `[]`     |
+| `respectInlineDisables`    | `boolean`                        | `true`   |
+| `adoptExistingLintConfig`  | `boolean`                        | `true`   |
+
+`textComponents` is the broad escape hatch for `rn-no-raw-text` — list components that themselves behave like React Native's `<Text>` (custom `Typography`, `NativeTabs.Trigger.Label`, etc.) and the rule will treat them as text containers regardless of what their children look like.
+
+`rawTextWrapperComponents` is the narrower option for components that are not text elements but safely route string-only children through an internal `<Text>` (e.g. `heroui-native`'s `Button`, which stringifies its children and renders them through a `ButtonLabel`). Listed wrappers suppress `rn-no-raw-text` only when their children are entirely stringifiable. A wrapper with mixed children — e.g. `<Button>Save<Icon /></Button>` — still reports because the wrapper can't safely route raw text alongside a sibling JSX element.
 
 ## Node.js API
 

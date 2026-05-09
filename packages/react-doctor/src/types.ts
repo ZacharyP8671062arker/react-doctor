@@ -205,6 +205,23 @@ export interface ReactDoctorConfig {
   share?: boolean;
   textComponents?: string[];
   /**
+   * Names of components that safely route string-only children through a
+   * React Native `<Text>` internally (e.g. `heroui-native`'s `Button`,
+   * which stringifies its children and renders them through a
+   * `ButtonLabel` → `Text`). For listed components, `rn-no-raw-text`
+   * is suppressed ONLY when the wrapper's children are entirely
+   * stringifiable (no nested JSX elements). A wrapper with mixed
+   * children — e.g. `<Button>Save<Icon /></Button>` — still reports,
+   * because the wrapper can't safely route raw text alongside a
+   * sibling JSX element.
+   *
+   * Use this instead of `textComponents` when the component is not
+   * itself a text element but is known to wrap its string children
+   * in one. `textComponents` is the broader escape hatch and
+   * suppresses regardless of sibling content.
+   */
+  rawTextWrapperComponents?: string[];
+  /**
    * Whether to respect inline `// eslint-disable*`, `// oxlint-disable*`,
    * and `// react-doctor-disable*` comments in source files. Default: `true`.
    *

@@ -89,6 +89,88 @@ describe("issue #93 + #100: textComponents allowlists custom RN text wrappers", 
   });
 });
 
+describe("issue #183: rawTextWrapperComponents suppresses string-only wrapper children", () => {
+  it("suppresses raw string children inside configured raw text wrappers", () => {
+    const config: ReactDoctorConfig = { rawTextWrapperComponents: ["Button"] };
+    const file = `<Button>Cancel</Button>\n`;
+    const filtered = filterIgnoredDiagnostics(
+      [buildRnTextDiagnostic({ line: 1 })],
+      config,
+      VIRTUAL_ROOT,
+      stubReadFileLines(file),
+    );
+    expect(filtered).toHaveLength(0);
+  });
+
+  it("suppresses raw template-literal children inside configured raw text wrappers", () => {
+    const config: ReactDoctorConfig = { rawTextWrapperComponents: ["Button"] };
+    const file = "<Button>{`Save changes`}</Button>\n";
+    const filtered = filterIgnoredDiagnostics(
+      [buildRnTextDiagnostic({ line: 1 })],
+      config,
+      VIRTUAL_ROOT,
+      stubReadFileLines(file),
+    );
+    expect(filtered).toHaveLength(0);
+  });
+
+  it("recognizes wrappers by their LEAF name when the JSX uses a member expression", () => {
+    const config: ReactDoctorConfig = { rawTextWrapperComponents: ["Button"] };
+    const file = `<HeroUi.Button>Cancel</HeroUi.Button>\n`;
+    const filtered = filterIgnoredDiagnostics(
+      [buildRnTextDiagnostic({ line: 1 })],
+      config,
+      VIRTUAL_ROOT,
+      stubReadFileLines(file),
+    );
+    expect(filtered).toHaveLength(0);
+  });
+
+  it("still reports raw text inside a wrapper that ALSO contains a JSX child element", () => {
+    const config: ReactDoctorConfig = { rawTextWrapperComponents: ["Button"] };
+    const file = `<Button>\n  Save\n  <Icon />\n</Button>\n`;
+    const filtered = filterIgnoredDiagnostics(
+      [buildRnTextDiagnostic({ line: 2 })],
+      config,
+      VIRTUAL_ROOT,
+      stubReadFileLines(file),
+    );
+    expect(filtered).toHaveLength(1);
+  });
+
+  it("does not affect wrappers that aren't listed", () => {
+    const config: ReactDoctorConfig = { rawTextWrapperComponents: ["Button"] };
+    const file = `<Card>Cancel</Card>\n`;
+    const filtered = filterIgnoredDiagnostics(
+      [buildRnTextDiagnostic({ line: 1 })],
+      config,
+      VIRTUAL_ROOT,
+      stubReadFileLines(file),
+    );
+    expect(filtered).toHaveLength(1);
+  });
+
+  it("composes with textComponents (each suppresses its own diagnostics)", () => {
+    const config: ReactDoctorConfig = {
+      textComponents: ["Typography"],
+      rawTextWrapperComponents: ["Button"],
+    };
+    const file = `<Typography>Hello</Typography>\n<Button>Cancel</Button>\n<View>Bad</View>\n`;
+    const filtered = filterIgnoredDiagnostics(
+      [
+        buildRnTextDiagnostic({ line: 1 }),
+        buildRnTextDiagnostic({ line: 2 }),
+        buildRnTextDiagnostic({ line: 3 }),
+      ],
+      config,
+      VIRTUAL_ROOT,
+      stubReadFileLines(file),
+    );
+    expect(filtered).toHaveLength(1);
+    expect(filtered[0].line).toBe(3);
+  });
+});
+
 describe("issue #94: MotionConfig satisfies the reduced-motion accessibility check", () => {
   it("does not emit require-reduced-motion when MotionConfig is present in source", () => {
     const projectDir = path.join(tempRoot, "issue-94-positive");
