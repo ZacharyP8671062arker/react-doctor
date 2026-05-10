@@ -77,6 +77,31 @@ describe("filterAutomaticSuppressions", () => {
       ];
       expect(filterAutomaticSuppressions(diagnostics, tempDirectory, null)).toEqual([]);
     });
+
+    it("drops JS micro-perf rules in test files (regression: array.includes() in fixture loops)", () => {
+      const diagnostics = [
+        buildDiagnostic({
+          filePath: "test/themeTypeUpdates.test.ts",
+          plugin: "react-doctor",
+          rule: "js-set-map-lookups",
+          message: "array.includes() in a loop is O(n) per call …",
+          category: "Performance",
+        }),
+        buildDiagnostic({
+          filePath: "src/utils/__tests__/build-fixture.test.ts",
+          plugin: "react-doctor",
+          rule: "js-combine-iterations",
+          category: "Performance",
+        }),
+        buildDiagnostic({
+          filePath: "tests/integration/run.spec.ts",
+          plugin: "react-doctor",
+          rule: "async-await-in-loop",
+          category: "Performance",
+        }),
+      ];
+      expect(filterAutomaticSuppressions(diagnostics, tempDirectory, null)).toEqual([]);
+    });
   });
 
   describe("build-entry dead-code suppression", () => {

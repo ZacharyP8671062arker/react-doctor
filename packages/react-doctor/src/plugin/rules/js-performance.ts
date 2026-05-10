@@ -110,6 +110,207 @@ export const jsMinMaxLoop: Rule = {
   }),
 };
 
+// HACK: methods that ALWAYS return a string when called on a string
+// receiver. We use this list to recognize a `.toLowerCase().includes(x)`
+// chain as a string-on-string lookup and skip the diagnostic.
+// Members deliberately omitted because they're shared with arrays:
+//   .at(i) / .slice() / .concat() — both String and Array
+//   .split() — returns Array, not relevant here
+const STRING_RETURNING_METHODS: ReadonlySet<string> = new Set([
+  "toString",
+  "toLocaleString",
+  "toLowerCase",
+  "toUpperCase",
+  "toLocaleLowerCase",
+  "toLocaleUpperCase",
+  "trim",
+  "trimStart",
+  "trimEnd",
+  "padStart",
+  "padEnd",
+  "normalize",
+  "repeat",
+  "replace",
+  "replaceAll",
+  "substring",
+  "substr",
+  "charAt",
+  "toFixed",
+  "toExponential",
+  "toPrecision",
+  "toJSON",
+]);
+
+// HACK: DOM and built-in object properties whose value is statically
+// typed as `string` (or `string | undefined`). When the receiver of a
+// `.includes()` / `.indexOf()` call ends in a member access on one of
+// these names, the call is overwhelmingly substring search rather than
+// array membership check.
+//
+// Conservative coverage of the most-common ones — the tradeoff for
+// adding a name is "we miss a real array-perf issue if a user named
+// their array `textContent`", which is rare; the tradeoff for omitting
+// is "we false-positive on a real string operation". The reported
+// false-positives all hit names in this list.
+const STRING_TYPED_PROPERTY_NAMES: ReadonlySet<string> = new Set([
+  // Node text accessors
+  "textContent",
+  "innerText",
+  "innerHTML",
+  "outerHTML",
+  "nodeValue",
+  "nodeName",
+  "tagName",
+  "localName",
+  "namespaceURI",
+  "baseURI",
+  "documentURI",
+  // Element identity / metadata
+  "className",
+  "id",
+  "tagName",
+  "lang",
+  "dir",
+  "title",
+  "alt",
+  "type",
+  "name",
+  "placeholder",
+  "href",
+  "src",
+  "value",
+  "accessKey",
+  "contentEditable",
+  // URL / Location
+  "hash",
+  "host",
+  "hostname",
+  "pathname",
+  "port",
+  "protocol",
+  "search",
+  "origin",
+  "username",
+  "password",
+  // Document / response charset
+  "characterSet",
+  "contentType",
+  "charset",
+  "mimeType",
+  "mediaType",
+  // Style
+  "cssText",
+  // Error
+  "message",
+  "stack",
+  "fileName",
+  "code",
+  // Misc string-shaped data
+  "label",
+  "slug",
+  "prefix",
+]);
+
+// HACK: identifier names that overwhelmingly bind to strings. Limited
+// to the names where ambiguity cost (false negative on a real
+// array-perf issue) is dwarfed by the ambiguity cost of NOT including
+// them (false positive on a string-substring search).
+//
+// `data`, `value`, `item`, `result`, `input`, `output`, `body` are
+// deliberately omitted — they bind to arrays nearly as often as to
+// strings, and the rule should still fire on those.
+const STRING_TYPED_IDENTIFIER_NAMES: ReadonlySet<string> = new Set([
+  "text",
+  "string",
+  "str",
+  "content",
+  "contents",
+  "html",
+  "xml",
+  "json",
+  "css",
+  "yaml",
+  "markdown",
+  "md",
+  "source",
+  "sourceCode",
+  "template",
+  "raw",
+  "comment",
+  "description",
+  "summary",
+  "snippet",
+  "url",
+  "uri",
+  "path",
+  "filename",
+  "filepath",
+  "fileName",
+  "filePath",
+  "line",
+  "char",
+  "character",
+  "letter",
+  "word",
+  "phrase",
+  "sentence",
+  "paragraph",
+  "query",
+  "search",
+  "haystack",
+  "needle",
+]);
+
+// HACK: returns true when the receiver of a `.includes()` /
+// `.indexOf()` call is obviously a string. Used by `jsSetMapLookups`
+// to skip a diagnostic that would otherwise fire on substring search
+// (where a Set rewrite makes no sense). Conservative — only fires on
+// signals that map to "this is a string at runtime" with high
+// confidence; ambiguous receivers (`data.includes(x)`) still produce
+// the diagnostic since converting to a Set IS the right call when
+// they happen to be arrays.
+const isLikelyStringReceiver = (receiver: EsTreeNode | null | undefined): boolean => {
+  if (!receiver) return false;
+
+  if (receiver.type === "Literal" && typeof receiver.value === "string") return true;
+  if (receiver.type === "TemplateLiteral") return true;
+
+  if (
+    receiver.type === "CallExpression" &&
+    receiver.callee?.type === "Identifier" &&
+    receiver.callee.name === "String"
+  ) {
+    return true;
+  }
+
+  if (
+    receiver.type === "CallExpression" &&
+    receiver.callee?.type === "MemberExpression" &&
+    receiver.callee.property?.type === "Identifier" &&
+    STRING_RETURNING_METHODS.has(receiver.callee.property.name)
+  ) {
+    return true;
+  }
+
+  if (receiver.type === "MemberExpression" && receiver.property?.type === "Identifier") {
+    if (STRING_TYPED_PROPERTY_NAMES.has(receiver.property.name)) return true;
+  }
+
+  if (
+    receiver.type === "ChainExpression" &&
+    receiver.expression &&
+    isLikelyStringReceiver(receiver.expression)
+  ) {
+    return true;
+  }
+
+  if (receiver.type === "Identifier" && STRING_TYPED_IDENTIFIER_NAMES.has(receiver.name)) {
+    return true;
+  }
+
+  return false;
+};
+
 export const jsSetMapLookups: Rule = {
   create: (context: RuleContext) =>
     createLoopAwareVisitors({
@@ -117,12 +318,12 @@ export const jsSetMapLookups: Rule = {
         if (node.callee?.type !== "MemberExpression" || node.callee.property?.type !== "Identifier")
           return;
         const methodName = node.callee.property.name;
-        if (methodName === "includes" || methodName === "indexOf") {
-          context.report({
-            node,
-            message: `array.${methodName}() in a loop is O(n) per call — convert to a Set for O(1) lookups`,
-          });
-        }
+        if (methodName !== "includes" && methodName !== "indexOf") return;
+        if (isLikelyStringReceiver(node.callee.object)) return;
+        context.report({
+          node,
+          message: `array.${methodName}() in a loop is O(n) per call — convert to a Set for O(1) lookups`,
+        });
       },
     }),
 };
