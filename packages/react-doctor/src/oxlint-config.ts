@@ -667,17 +667,19 @@ export const createOxlintConfig = ({
   const capabilities = buildCapabilities(project);
 
   const enabledReactDoctorRules: Record<string, RuleSeverity> = {};
-  const allRuleMaps = [
-    GLOBAL_REACT_DOCTOR_RULES,
+  const frameworkRuleMaps = [
     NEXTJS_RULES,
     REACT_NATIVE_RULES,
     TANSTACK_START_RULES,
     TANSTACK_QUERY_RULES,
   ];
+  const allRuleMaps = [GLOBAL_REACT_DOCTOR_RULES, ...frameworkRuleMaps];
+  const frameworkRuleKeys = new Set(frameworkRuleMaps.flatMap(Object.keys));
   for (const ruleMap of allRuleMaps) {
     for (const [ruleKey, severity] of Object.entries(ruleMap)) {
       const metadata = RULE_METADATA.get(ruleKey);
       if (!metadata) {
+        if (frameworkRuleKeys.has(ruleKey)) continue;
         enabledReactDoctorRules[ruleKey] = severity;
         continue;
       }

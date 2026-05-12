@@ -13,7 +13,7 @@ import { batchIncludePaths } from "./batch-include-paths.js";
 import { canOxlintExtendConfig } from "./can-oxlint-extend-config.js";
 import { collectIgnorePatterns } from "./collect-ignore-patterns.js";
 import { detectUserLintConfigPaths } from "./detect-user-lint-config.js";
-import { ALL_REACT_DOCTOR_RULE_KEYS, createOxlintConfig } from "../oxlint-config.js";
+import { ALL_REACT_DOCTOR_RULE_KEYS, RULE_METADATA, createOxlintConfig } from "../oxlint-config.js";
 import type { CleanedDiagnostic, Diagnostic, OxlintOutput, ProjectInfo } from "../types.js";
 import { neutralizeDisableDirectives } from "./neutralize-disable-directives.js";
 
@@ -871,6 +871,7 @@ const validateRuleRegistration = (): void => {
   didValidateRuleRegistration = true;
   const missingHelp: string[] = [];
   const missingCategory: string[] = [];
+  const missingMetadata: string[] = [];
   for (const fullKey of ALL_REACT_DOCTOR_RULE_KEYS) {
     const ruleName = fullKey.replace(/^react-doctor\//, "");
     if (!Object.hasOwn(RULE_CATEGORY_MAP, fullKey)) {
@@ -879,13 +880,19 @@ const validateRuleRegistration = (): void => {
     if (!Object.hasOwn(RULE_HELP_MAP, ruleName)) {
       missingHelp.push(fullKey);
     }
+    if (!RULE_METADATA.has(fullKey)) {
+      missingMetadata.push(fullKey);
+    }
   }
-  if (missingCategory.length > 0 || missingHelp.length > 0) {
+  if (missingCategory.length > 0 || missingHelp.length > 0 || missingMetadata.length > 0) {
     const detail = [
       missingCategory.length > 0
         ? `Missing RULE_CATEGORY_MAP entries: ${missingCategory.join(", ")}`
         : null,
       missingHelp.length > 0 ? `Missing RULE_HELP_MAP entries: ${missingHelp.join(", ")}` : null,
+      missingMetadata.length > 0
+        ? `Missing RULE_METADATA entries: ${missingMetadata.join(", ")}`
+        : null,
     ]
       .filter((entry): entry is string => entry !== null)
       .join("; ");
