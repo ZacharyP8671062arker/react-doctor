@@ -2,6 +2,7 @@ import path from "node:path";
 import {
   COMMON_ENTRY_STEMS,
   FRAMEWORK_ROUTE_ENTRY_STEMS,
+  SCRIPT_ENTRY_DIRECTORY_NAMES,
   SOURCE_FILE_EXTENSIONS,
   SUPPORT_ENTRY_PATTERNS,
   TEST_ENTRY_MARKERS,
@@ -114,9 +115,18 @@ const isConventionalRuntimeEntry = (relativePath: string): boolean => {
     (COMMON_ENTRY_STEMS.has(fileStem) &&
       (relativePath.startsWith("src/") || pathParts.length === 1)) ||
     (FRAMEWORK_ROUTE_ENTRY_STEMS.has(fileStem) &&
-      (pathParts.includes("app") || pathParts.includes("pages") || pathParts.includes("routes")))
+      (pathParts.includes("app") || pathParts.includes("pages") || pathParts.includes("routes"))) ||
+    isScriptDirectoryEntry(pathParts)
   );
 };
+
+// Top-level files inside conventional CLI script directories
+// (`scripts/foo.ts`, `tools/foo.ts`, `internal-tools/foo.ts`, `bin/foo.ts`)
+// are runtime entrypoints. Helper files in nested folders like
+// `scripts/_lib/` are NOT entries — they become reachable through the
+// script files that import them.
+const isScriptDirectoryEntry = (pathParts: string[]): boolean =>
+  pathParts.length === 2 && SCRIPT_ENTRY_DIRECTORY_NAMES.has(pathParts[0]);
 
 const isTestEntry = (relativePath: string): boolean =>
   TEST_ENTRY_MARKERS.some((marker) => relativePath.includes(marker));

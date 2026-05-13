@@ -102,6 +102,14 @@ const collectDuplicateExports = (graph: ModuleGraph): DuplicateExportFinding[] =
       ) {
         continue;
       }
+      // Type-only exports of the same name in different modules are not a
+      // public-API conflict — readers can't observe one masking the other
+      // at runtime, and it's idiomatic to have e.g. `type Config` per
+      // feature module. Skip them entirely.
+      if (exportSymbol.isTypeOnly) continue;
+      // Unused exports are already reported by `unused-export` — counting
+      // them as duplicates just produces redundant noise about dead code.
+      if (!hasUsageReference(exportSymbol)) continue;
       const exports = exportsByName.get(exportSymbol.exportedName) ?? [];
       exports.push({ file: node.file, exportSymbol });
       exportsByName.set(exportSymbol.exportedName, exports);

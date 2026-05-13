@@ -76,6 +76,53 @@ describe("codebase rules", () => {
     expect(result.issues.map((issue) => issue.location?.filePath).sort()).toEqual([]);
   });
 
+  it("treats top-level scripts in CLI directories as runtime entrypoints", async () => {
+    const rootDirectory = await createFixtureProject({
+      "src/main.ts": "console.log('main');\n",
+      "scripts/build.ts": "import { runBuild } from './_lib/build-runner';\nrunBuild();\n",
+      "scripts/_lib/build-runner.ts": "export const runBuild = () => 'built';\n",
+      "internal-tools/diagnose.ts":
+        "import { collect } from './_lib/collect';\nconsole.log(collect());\n",
+      "internal-tools/_lib/collect.ts": "export const collect = () => 'ok';\n",
+      "tools/format.ts": "console.log('format');\n",
+      "bin/cli.ts": "console.log('cli');\n",
+    });
+
+    const result = await inspectReactProject({
+      rootDirectory,
+      rules: {
+        disabledRuleIds: [PROJECT_STRUCTURE_RULE_ID],
+        enabledRuleIds: [DEAD_CODE_RULE_ID],
+      },
+    });
+
+    expect(result.issues.map((issue) => issue.location?.filePath).sort()).toEqual([]);
+  });
+
+  it("treats common framework config files as support entrypoints", async () => {
+    const rootDirectory = await createFixtureProject({
+      "src/main.ts": "console.log('main');\n",
+      "drizzle.config.ts": "export default { schema: './src/schema.ts' };\n",
+      "vitest.config.ts": "export default { test: {} };\n",
+      "tailwind.config.ts": "export default { content: ['src/**/*'] };\n",
+      "postcss.config.mjs": "export default { plugins: {} };\n",
+      "next.config.ts": "export default { reactStrictMode: true };\n",
+      "sentry.server.config.ts": "export const init = () => null;\n",
+      "instrumentation.ts": "export const register = () => null;\n",
+      "middleware.ts": "export const middleware = () => null;\n",
+    });
+
+    const result = await inspectReactProject({
+      rootDirectory,
+      rules: {
+        disabledRuleIds: [PROJECT_STRUCTURE_RULE_ID],
+        enabledRuleIds: [DEAD_CODE_RULE_ID],
+      },
+    });
+
+    expect(result.issues.map((issue) => issue.location?.filePath).sort()).toEqual([]);
+  });
+
   it("respects gitignore patterns during source discovery", async () => {
     const rootDirectory = await createFixtureProject({
       ".gitignore": ["generated/", "!generated/keep.ts"].join("\n"),
@@ -390,6 +437,50 @@ describe("codebase rules", () => {
       `${DEAD_CODE_RULE_ID}/unused-export/src/browser-service.ts/unusedBrowserService`,
       `${DEAD_CODE_RULE_ID}/unused-export/src/server-service.ts/unusedServerService`,
     ]);
+  });
+
+  it("does not flag duplicate-export when one duplicate is itself unused", async () => {
+    const rootDirectory = await createFixtureProject({
+      "src/main.ts": ["import { usedDb } from './primary-db';", "console.log(usedDb);"].join("\n"),
+      "src/primary-db.ts": "export const usedDb = 1;\n",
+      "src/secondary-db.ts": "export const usedDb = 2;\n",
+    });
+
+    const result = await inspectReactProject({
+      rootDirectory,
+      rules: {
+        disabledRuleIds: [PROJECT_STRUCTURE_RULE_ID],
+        enabledRuleIds: [DEAD_CODE_RULE_ID],
+      },
+    });
+
+    const ruleIds = result.issues.map((issue) => issue.source?.ruleId).sort();
+    expect(ruleIds).not.toContain("duplicate-export");
+  });
+
+  it("does not flag duplicate-export for type-only exports", async () => {
+    const rootDirectory = await createFixtureProject({
+      "src/main.ts": [
+        "import type { Config as PrimaryConfig } from './primary-config';",
+        "import type { Config as SecondaryConfig } from './secondary-config';",
+        "const primary: PrimaryConfig = { id: 'a' };",
+        "const secondary: SecondaryConfig = { id: 'b' };",
+        "console.log(primary, secondary);",
+      ].join("\n"),
+      "src/primary-config.ts": "export interface Config { id: string }\n",
+      "src/secondary-config.ts": "export interface Config { id: string }\n",
+    });
+
+    const result = await inspectReactProject({
+      rootDirectory,
+      rules: {
+        disabledRuleIds: [PROJECT_STRUCTURE_RULE_ID],
+        enabledRuleIds: [DEAD_CODE_RULE_ID],
+      },
+    });
+
+    const ruleIds = result.issues.map((issue) => issue.source?.ruleId).sort();
+    expect(ruleIds).not.toContain("duplicate-export");
   });
 
   it("propagates namespace object spread aliases to source exports", async () => {
