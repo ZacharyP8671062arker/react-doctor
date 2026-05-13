@@ -5,7 +5,7 @@ import { performance } from "node:perf_hooks";
 import { Command } from "commander";
 import { CANONICAL_GITHUB_URL } from "../constants.js";
 import { runInstallSkill } from "./install-skill.js";
-import { scan } from "../core/scan.js";
+import { inspect } from "../core/inspect.js";
 import type {
   Diagnostic,
   DiffInfo,
@@ -13,8 +13,8 @@ import type {
   JsonReport,
   JsonReportMode,
   ReactDoctorConfig,
-  ScanOptions,
-  ScanResult,
+  InspectOptions,
+  InspectResult,
 } from "../types.js";
 import { buildJsonReport } from "../core/build-json-report.js";
 import { buildJsonReportError } from "../core/build-json-report-error.js";
@@ -161,11 +161,11 @@ const isCiEnvironment = (): boolean =>
   CI_ENVIRONMENT_VARIABLES.some((envVariable) => Boolean(process.env[envVariable])) ||
   process.env.CI === "true";
 
-const resolveCliScanOptions = (
+const resolveCliInspectOptions = (
   flags: CliFlags,
   userConfig: ReactDoctorConfig | null,
   programInstance: Command,
-): ScanOptions => {
+): InspectOptions => {
   const isCliOverride = (optionName: string) =>
     programInstance.getOptionValueSource(optionName) === "cli";
 
@@ -264,7 +264,7 @@ const resolveDiffMode = async (
 interface ExplainContext {
   resolvedDirectory: string;
   userConfig: ReactDoctorConfig | null;
-  scanOptions: ScanOptions;
+  scanOptions: InspectOptions;
   projectFlag: string | undefined;
 }
 
@@ -275,7 +275,7 @@ const runExplain = async (fileLineArgument: string, context: ExplainContext): Pr
   const { filePath, line } = parseFileLineArgument(fileLineArgument);
   const targetDirectory = await resolveExplainTargetDirectory(filePath, context);
 
-  const scanResult = await scan(targetDirectory, {
+  const scanResult = await inspect(targetDirectory, {
     ...context.scanOptions,
     silent: true,
     offline: true,
@@ -449,7 +449,7 @@ const program = new Command()
         await runExplain(explainArgument, {
           resolvedDirectory,
           userConfig,
-          scanOptions: resolveCliScanOptions(flags, userConfig, program),
+          scanOptions: resolveCliInspectOptions(flags, userConfig, program),
           projectFlag: flags.project,
         });
         return;
@@ -460,7 +460,7 @@ const program = new Command()
         logger.break();
       }
 
-      const scanOptions = resolveCliScanOptions(flags, userConfig, program);
+      const scanOptions = resolveCliInspectOptions(flags, userConfig, program);
       const shouldSkipPrompts =
         flags.yes ||
         flags.full ||
@@ -506,7 +506,7 @@ const program = new Command()
           const snapshot = materializeStagedFiles(resolvedDirectory, stagedFiles, tempDirectory);
           cleanupSnapshot = snapshot.cleanup;
 
-          const scanResult = await scan(snapshot.tempDirectory, {
+          const scanResult = await inspect(snapshot.tempDirectory, {
             ...scanOptions,
             includePaths: snapshot.stagedFiles,
             configOverride: userConfig,
@@ -520,7 +520,7 @@ const program = new Command()
           }));
 
           if (isJsonMode) {
-            const remappedScanResult: ScanResult = {
+            const remappedInspectResult: InspectResult = {
               ...scanResult,
               diagnostics: remappedDiagnostics,
               project: {
@@ -534,7 +534,7 @@ const program = new Command()
                 directory: resolvedDirectory,
                 mode: "staged",
                 diff: null,
-                scans: [{ directory: resolvedDirectory, result: remappedScanResult }],
+                scans: [{ directory: resolvedDirectory, result: remappedInspectResult }],
                 totalElapsedMilliseconds: performance.now() - jsonStartTime,
               }),
             );
@@ -594,7 +594,7 @@ const program = new Command()
       }
 
       const allDiagnostics: Diagnostic[] = [];
-      const completedScans: Array<{ directory: string; result: ScanResult }> = [];
+      const completedScans: Array<{ directory: string; result: InspectResult }> = [];
 
       for (const projectDirectory of projectDirectories) {
         let includePaths: string[] | undefined;
@@ -625,7 +625,7 @@ const program = new Command()
           logger.dim(`Scanning ${projectDirectory}...`);
           logger.break();
         }
-        const scanResult = await scan(projectDirectory, {
+        const scanResult = await inspect(projectDirectory, {
           ...scanOptions,
           includePaths,
           configOverride: userConfig,

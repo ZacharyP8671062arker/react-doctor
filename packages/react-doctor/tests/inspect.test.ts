@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it, vi } from "vite-plus/test";
-import { scan } from "../src/core/scan.js";
+import { inspect } from "../src/core/inspect.js";
 import { clearConfigCache } from "../src/core/config/load-config.js";
 import { setupReactProject } from "./regressions/_helpers.js";
 
@@ -32,11 +32,11 @@ afterAll(() => {
   fs.rmSync(noReactTempDirectory, { recursive: true, force: true });
 });
 
-describe("scan", () => {
+describe("inspect", () => {
   it("completes without throwing on a valid React project", async () => {
     const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     try {
-      await scan(path.join(FIXTURES_DIRECTORY, "basic-react"), {
+      await inspect(path.join(FIXTURES_DIRECTORY, "basic-react"), {
         lint: true,
         deadCode: false,
       });
@@ -48,7 +48,7 @@ describe("scan", () => {
   it("throws when React dependency is missing", async () => {
     const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     try {
-      await expect(scan(noReactTempDirectory, { lint: true, deadCode: false })).rejects.toThrow(
+      await expect(inspect(noReactTempDirectory, { lint: true, deadCode: false })).rejects.toThrow(
         "No React dependency found",
       );
     } finally {
@@ -59,7 +59,7 @@ describe("scan", () => {
   it("skips lint when option is disabled", async () => {
     const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     try {
-      await scan(path.join(FIXTURES_DIRECTORY, "basic-react"), {
+      await inspect(path.join(FIXTURES_DIRECTORY, "basic-react"), {
         lint: false,
         deadCode: false,
       });
@@ -72,7 +72,7 @@ describe("scan", () => {
     const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     try {
       const startTime = performance.now();
-      await scan(path.join(FIXTURES_DIRECTORY, "basic-react"), {
+      await inspect(path.join(FIXTURES_DIRECTORY, "basic-react"), {
         lint: true,
         deadCode: true,
       });
@@ -84,7 +84,7 @@ describe("scan", () => {
     }
   });
 
-  // Regression: when the CLI passes `configOverride`, scan() must trust
+  // Regression: when the CLI passes `configOverride`, inspect() must trust
   // the directory it was given and skip the rootDir redirect — otherwise
   // an ancestor config with `rootDir: "apps/web"` would re-route every
   // workspace-package scan back to apps/web. (Bugbot review #200.)
@@ -100,7 +100,7 @@ describe("scan", () => {
         JSON.stringify({ rootDir: "web" }),
       );
 
-      const result = await scan(adminProjectDirectory, {
+      const result = await inspect(adminProjectDirectory, {
         lint: false,
         deadCode: false,
         configOverride: null,
@@ -114,7 +114,7 @@ describe("scan", () => {
   });
 
   // Counterpart: when no configOverride is supplied (direct programmatic
-  // scan() call), rootDir redirection IS honored — same contract as
+  // inspect() call), rootDir redirection IS honored — same contract as
   // diagnose().
   it("DOES apply rootDir redirect when called without configOverride", async () => {
     clearConfigCache();
@@ -128,7 +128,7 @@ describe("scan", () => {
         JSON.stringify({ rootDir: "web" }),
       );
 
-      const result = await scan(tempDirectory, {
+      const result = await inspect(tempDirectory, {
         lint: false,
         deadCode: false,
       });

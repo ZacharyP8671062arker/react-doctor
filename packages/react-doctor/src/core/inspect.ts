@@ -16,7 +16,7 @@ import { printProjectDetection } from "../cli/render-project-detection.js";
 import { printSummary } from "../cli/render-summary.js";
 import { resolveOxlintNode } from "../cli/resolve-oxlint-node.js";
 import { NoReactDependencyError } from "../errors.js";
-import type { Diagnostic, ReactDoctorConfig, ScanOptions, ScanResult } from "../types.js";
+import type { Diagnostic, ReactDoctorConfig, InspectOptions, InspectResult } from "../types.js";
 import {
   calculateScore,
   calculateScoreBreakdown,
@@ -35,7 +35,7 @@ import { runKnip } from "./runners/run-knip.js";
 import { runOxlint } from "./runners/run-oxlint.js";
 import { isSpinnerSilent, setSpinnerSilent, spinner } from "../cli/spinner.js";
 
-interface ResolvedScanOptions {
+interface ResolvedInspectOptions {
   lint: boolean;
   deadCode: boolean;
   verbose: boolean;
@@ -58,10 +58,10 @@ const buildIgnoredTags = (userConfig: ReactDoctorConfig | null): ReadonlySet<str
   return tags;
 };
 
-const mergeScanOptions = (
-  inputOptions: ScanOptions,
+const mergeInspectOptions = (
+  inputOptions: InspectOptions,
   userConfig: ReactDoctorConfig | null,
-): ResolvedScanOptions => ({
+): ResolvedInspectOptions => ({
   lint: inputOptions.lint ?? userConfig?.lint ?? true,
   deadCode: inputOptions.deadCode ?? userConfig?.deadCode ?? true,
   verbose: inputOptions.verbose ?? userConfig?.verbose ?? false,
@@ -77,16 +77,16 @@ const mergeScanOptions = (
   ignoredTags: buildIgnoredTags(userConfig),
 });
 
-export const scan = async (
+export const inspect = async (
   directory: string,
-  inputOptions: ScanOptions = {},
-): Promise<ScanResult> => {
+  inputOptions: InspectOptions = {},
+): Promise<InspectResult> => {
   const startTime = performance.now();
 
   // configOverride means the caller (typically the CLI) already resolved
   // both the config and any rootDir redirect; trust their directory
   // verbatim. Otherwise honor `rootDir` from the loaded config so direct
-  // programmatic `scan()` callers get the same redirect as `diagnose()`.
+  // programmatic `inspect()` callers get the same redirect as `diagnose()`.
   let scanDirectory = directory;
   let userConfig: ReactDoctorConfig | null;
   if (inputOptions.configOverride !== undefined) {
@@ -101,7 +101,7 @@ export const scan = async (
     userConfig = loadedConfig?.config ?? null;
   }
 
-  const options = mergeScanOptions(inputOptions, userConfig);
+  const options = mergeInspectOptions(inputOptions, userConfig);
 
   const wasLoggerSilent = isLoggerSilent();
   const wasSpinnerSilent = isSpinnerSilent();
@@ -111,7 +111,7 @@ export const scan = async (
   }
 
   try {
-    return await runScan(scanDirectory, options, userConfig, startTime);
+    return await runInspect(scanDirectory, options, userConfig, startTime);
   } finally {
     if (options.silent) {
       setLoggerSilent(wasLoggerSilent);
@@ -120,12 +120,12 @@ export const scan = async (
   }
 };
 
-const runScan = async (
+const runInspect = async (
   directory: string,
-  options: ResolvedScanOptions,
+  options: ResolvedInspectOptions,
   userConfig: ReactDoctorConfig | null,
   startTime: number,
-): Promise<ScanResult> => {
+): Promise<InspectResult> => {
   const projectInfo = discoverProject(directory);
   const { includePaths } = options;
   const isDiffMode = includePaths.length > 0;
@@ -233,7 +233,7 @@ const runScan = async (
     : await calculateScore(diagnostics);
   const noScoreMessage = OFFLINE_MESSAGE;
 
-  const buildResult = (): ScanResult => ({
+  const buildResult = (): InspectResult => ({
     diagnostics,
     score: scoreResult,
     skippedChecks,

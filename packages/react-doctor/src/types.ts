@@ -126,7 +126,7 @@ export interface DiagnoseResult {
   elapsedMilliseconds: number;
 }
 
-export interface ScanResult {
+export interface InspectResult {
   diagnostics: Diagnostic[];
   score: ScoreResult | null;
   skippedChecks: string[];
@@ -134,7 +134,7 @@ export interface ScanResult {
   elapsedMilliseconds: number;
 }
 
-export interface ScanOptions {
+export interface InspectOptions {
   lint?: boolean;
   deadCode?: boolean;
   verbose?: boolean;

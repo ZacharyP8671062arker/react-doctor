@@ -18,8 +18,8 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vite-plus/test";
 
-import { scan } from "../../src/core/scan.js";
-import type { ReactDoctorConfig, ScanResult } from "../../src/types.js";
+import { inspect } from "../../src/core/inspect.js";
+import type { ReactDoctorConfig, InspectResult } from "../../src/types.js";
 import {
   encodeAnnotationProperty,
   encodeAnnotationMessage,
@@ -41,14 +41,14 @@ const setupMinimalReactProject = (caseId: string): string =>
 
 const stripAnsi = (text: string): string => text.replace(ANSI_ESCAPE_PATTERN, "");
 
-// Capture every line `scan()` writes to console while it runs. We use
+// Capture every line `inspect()` writes to console while it runs. We use
 // real I/O (logger / spinner / console.log) rather than scrub source
 // text — testing observable behavior survives refactors that move
 // strings around.
 const captureScanOutput = async (
   projectDir: string,
-  options: Parameters<typeof scan>[1],
-): Promise<{ result: ScanResult; stdout: string; stderr: string }> => {
+  options: Parameters<typeof inspect>[1],
+): Promise<{ result: InspectResult; stdout: string; stderr: string }> => {
   const stdout: string[] = [];
   const stderr: string[] = [];
   const originalLog = console.log;
@@ -60,7 +60,7 @@ const captureScanOutput = async (
   console.error = (...args: unknown[]) => stderr.push(args.join(" "));
   console.warn = (...args: unknown[]) => stderr.push(args.join(" "));
   try {
-    const result = await scan(projectDir, options);
+    const result = await inspect(projectDir, options);
     return { result, stdout: stdout.join("\n"), stderr: stderr.join("\n") };
   } finally {
     console.log = originalLog;
@@ -71,7 +71,7 @@ const captureScanOutput = async (
 };
 
 describe("issue #50: CLI flags can re-enable lint/dead-code that config disabled", () => {
-  it("scan(directory, { lint: true }) overrides a `lint: false` config", async () => {
+  it("inspect(directory, { lint: true }) overrides a `lint: false` config", async () => {
     const projectDir = setupMinimalReactProject("issue-50-lint");
     writeJson(path.join(projectDir, "react-doctor.config.json"), {
       lint: false,
@@ -91,7 +91,7 @@ describe("issue #50: CLI flags can re-enable lint/dead-code that config disabled
     expect(result.skippedChecks).not.toContain("lint");
   });
 
-  it("scan(directory, { lint: false }) overrides a `lint: true` config", async () => {
+  it("inspect(directory, { lint: false }) overrides a `lint: true` config", async () => {
     const projectDir = setupMinimalReactProject("issue-50-no-lint");
     writeJson(path.join(projectDir, "react-doctor.config.json"), { lint: true });
     const { result } = await captureScanOutput(projectDir, {
@@ -209,7 +209,7 @@ export const Cart = () => {
 });
 
 describe("issue #135: dead-code failures surface in skippedChecks", () => {
-  it("scan() returns a `skippedChecks` array on the result", async () => {
+  it("inspect() returns a `skippedChecks` array on the result", async () => {
     const projectDir = setupMinimalReactProject("issue-135");
     const { result } = await captureScanOutput(projectDir, {
       lint: false,

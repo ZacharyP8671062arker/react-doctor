@@ -4,7 +4,7 @@ import type {
   JsonReportDiffInfo,
   JsonReportMode,
   JsonReportProjectEntry,
-  ScanResult,
+  InspectResult,
 } from "../types.js";
 import { summarizeDiagnostics } from "./diagnostics/summarize-diagnostics.js";
 
@@ -13,7 +13,7 @@ interface BuildJsonReportInput {
   directory: string;
   mode: JsonReportMode;
   diff: DiffInfo | null;
-  scans: Array<{ directory: string; result: ScanResult }>;
+  scans: Array<{ directory: string; result: InspectResult }>;
   totalElapsedMilliseconds: number;
 }
 

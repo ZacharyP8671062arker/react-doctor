@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 import { buildJsonReport } from "../src/core/build-json-report.js";
 import { buildJsonReportError } from "../src/core/build-json-report-error.js";
-import type { Diagnostic, ProjectInfo, ScanResult } from "../src/types.js";
+import type { Diagnostic, ProjectInfo, InspectResult } from "../src/types.js";
 
 const SAMPLE_PROJECT: ProjectInfo = {
   rootDirectory: "/repo",
@@ -32,7 +32,7 @@ const buildSampleScan = (
   diagnostics: Diagnostic[] = [],
   score = 82,
   label = "Good",
-): ScanResult => ({
+): InspectResult => ({
   diagnostics,
   score: { score, label },
   skippedChecks: [],
