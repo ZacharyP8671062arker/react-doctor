@@ -6,13 +6,13 @@ import {
   RULE_NAME_COLUMN_WIDTH_CHARS,
 } from "../constants.js";
 import type { Diagnostic } from "../types.js";
-import { buildHiddenDiagnosticsSummary } from "../utils/build-hidden-diagnostics-summary.js";
-import { groupBy } from "../utils/group-by.js";
-import { highlighter } from "../utils/highlighter.js";
-import { indentMultilineText } from "../utils/indent-multiline-text.js";
-import { logger } from "../utils/logger.js";
-import { toRelativePath } from "../utils/to-relative-path.js";
-import { wrapIndentedText } from "../utils/wrap-indented-text.js";
+import { buildHiddenDiagnosticsSummary } from "./build-hidden-diagnostics-summary.js";
+import { groupBy } from "../core/group-by.js";
+import { highlighter } from "./highlighter.js";
+import { indentMultilineText } from "./indent-multiline-text.js";
+import { logger } from "./logger.js";
+import { toRelativePath } from "../core/to-relative-path.js";
+import { wrapIndentedText } from "./wrap-indented-text.js";
 
 const SEVERITY_ORDER: Record<Diagnostic["severity"], number> = {
   error: 0,

@@ -17,11 +17,11 @@ import path from "node:path";
 import { afterAll, describe, expect, it } from "vite-plus/test";
 
 import type { ReactDoctorConfig } from "../../src/types.js";
-import { checkReducedMotion } from "../../src/utils/check-reduced-motion.js";
-import { filterIgnoredDiagnostics } from "../../src/utils/filter-diagnostics.js";
-import { mergeAndFilterDiagnostics } from "../../src/utils/merge-and-filter-diagnostics.js";
-import { runOxlint } from "../../src/utils/run-oxlint.js";
-import { createNodeReadFileLinesSync } from "../../src/utils/read-file-lines-node.js";
+import { checkReducedMotion } from "../../src/core/scoring/check-reduced-motion.js";
+import { filterIgnoredDiagnostics } from "../../src/core/diagnostics/filter-diagnostics.js";
+import { mergeAndFilterDiagnostics } from "../../src/core/diagnostics/merge-and-filter-diagnostics.js";
+import { runOxlint } from "../../src/core/runners/run-oxlint.js";
+import { createNodeReadFileLinesSync } from "../../src/core/read-file-lines-node.js";
 import {
   buildDiagnostic,
   buildTestProject,

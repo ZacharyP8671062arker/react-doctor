@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
-import { buildJsonReport } from "../src/utils/build-json-report.js";
-import { buildJsonReportError } from "../src/utils/build-json-report-error.js";
+import { buildJsonReport } from "../src/core/build-json-report.js";
+import { buildJsonReportError } from "../src/core/build-json-report-error.js";
 import type { Diagnostic, ProjectInfo, ScanResult } from "../src/types.js";
 
 const SAMPLE_PROJECT: ProjectInfo = {

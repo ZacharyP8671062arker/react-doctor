@@ -16,15 +16,15 @@ import type {
   ScanOptions,
   ScanResult,
 } from "../types.js";
-import { buildJsonReport } from "../utils/build-json-report.js";
-import { buildJsonReportError } from "../utils/build-json-report-error.js";
-import { filterSourceFiles, getDiffInfo } from "../utils/get-diff-files.js";
-import { highlighter } from "../utils/highlighter.js";
-import { loadConfigWithSource } from "../utils/load-config.js";
-import { resolveConfigRootDir } from "../utils/resolve-config-root-dir.js";
-import { logger, setLoggerSilent } from "../utils/logger.js";
-import { prompts } from "../utils/prompts.js";
-import { toRelativePath } from "../utils/to-relative-path.js";
+import { buildJsonReport } from "../core/build-json-report.js";
+import { buildJsonReportError } from "../core/build-json-report-error.js";
+import { filterSourceFiles, getDiffInfo } from "../core/runners/get-diff-files.js";
+import { highlighter } from "./highlighter.js";
+import { loadConfigWithSource } from "../core/config/load-config.js";
+import { resolveConfigRootDir } from "../core/config/resolve-config-root-dir.js";
+import { logger, setLoggerSilent } from "./logger.js";
+import { prompts } from "./prompts.js";
+import { toRelativePath } from "../core/to-relative-path.js";
 import { encodeAnnotationProperty, encodeAnnotationMessage } from "./annotation-encoding.js";
 import { findOwningProjectDirectory } from "./find-owning-project.js";
 import { getStagedSourceFiles, materializeStagedFiles } from "./get-staged-files.js";

@@ -1,9 +1,12 @@
 import path from "node:path";
 import type { WorkspacePackage } from "../types.js";
-import { discoverReactSubprojects, listWorkspacePackages } from "../utils/discover-project.js";
-import { highlighter } from "../utils/highlighter.js";
-import { logger } from "../utils/logger.js";
-import { prompts } from "../utils/prompts.js";
+import {
+  discoverReactSubprojects,
+  listWorkspacePackages,
+} from "../core/detection/discover-project.js";
+import { highlighter } from "./highlighter.js";
+import { logger } from "./logger.js";
+import { prompts } from "./prompts.js";
 
 export const selectProjects = async (
   rootDirectory: string,

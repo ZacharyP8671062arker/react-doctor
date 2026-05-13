@@ -3,8 +3,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vite-plus/test";
 import { runInstallSkill } from "../src/install-skill.js";
-import { setLoggerSilent } from "../src/utils/logger.js";
-import { setSpinnerSilent } from "../src/utils/spinner.js";
+import { setLoggerSilent } from "../src/cli/logger.js";
+import { setSpinnerSilent } from "../src/cli/spinner.js";
 
 interface InstallSkillFixture {
   projectRoot: string;

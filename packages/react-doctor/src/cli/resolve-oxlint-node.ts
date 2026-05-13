@@ -1,11 +1,11 @@
 import { OXLINT_NODE_REQUIREMENT, OXLINT_RECOMMENDED_NODE_MAJOR } from "../constants.js";
-import { logger } from "../utils/logger.js";
-import { prompts } from "../utils/prompts.js";
+import { logger } from "./logger.js";
+import { prompts } from "./prompts.js";
 import {
   installNodeViaNvm,
   isNvmInstalled,
   resolveNodeForOxlint,
-} from "../utils/resolve-compatible-node.js";
+} from "../core/runners/resolve-compatible-node.js";
 
 export const resolveOxlintNode = async (
   isLintEnabled: boolean,

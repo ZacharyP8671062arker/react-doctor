@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Diagnostic } from "../types.js";
-import { groupBy } from "../utils/group-by.js";
+import { groupBy } from "../core/group-by.js";
 import { formatRuleSummary, sortRuleGroupsByImportance } from "./render-diagnostics.js";
 
 export const writeDiagnosticsDirectory = (diagnostics: Diagnostic[]): string => {

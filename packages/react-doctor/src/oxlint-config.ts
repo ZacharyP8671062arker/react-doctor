@@ -1,6 +1,9 @@
 import { createRequire } from "node:module";
 import type { ProjectInfo } from "./types.js";
-import { isTailwindAtLeast, parseTailwindMajorMinor } from "./utils/parse-tailwind-major-minor.js";
+import {
+  isTailwindAtLeast,
+  parseTailwindMajorMinor,
+} from "./core/detection/parse-tailwind-major-minor.js";
 
 const esmRequire = createRequire(import.meta.url);
 

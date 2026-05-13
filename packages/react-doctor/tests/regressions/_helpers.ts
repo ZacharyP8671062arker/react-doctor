@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { runOxlint } from "../../src/utils/run-oxlint.js";
+import { runOxlint } from "../../src/core/runners/run-oxlint.js";
 import type { Diagnostic, ProjectInfo } from "../../src/types.js";
 
 export const writeFile = (filePath: string, contents: string): void => {

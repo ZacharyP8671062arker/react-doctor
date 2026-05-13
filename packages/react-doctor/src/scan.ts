@@ -21,19 +21,19 @@ import {
   calculateScore,
   calculateScoreBreakdown,
   calculateScoreLocally,
-} from "./utils/calculate-score.js";
-import { combineDiagnostics } from "./utils/combine-diagnostics.js";
-import { discoverProject } from "./utils/discover-project.js";
-import { formatErrorChain } from "./utils/format-error-chain.js";
-import { highlighter } from "./utils/highlighter.js";
-import { computeJsxIncludePaths } from "./utils/jsx-include-paths.js";
-import { loadConfigWithSource } from "./utils/load-config.js";
-import { isLoggerSilent, logger, setLoggerSilent } from "./utils/logger.js";
-import { resolveConfigRootDir } from "./utils/resolve-config-root-dir.js";
-import { resolveLintIncludePaths } from "./utils/resolve-lint-include-paths.js";
-import { runKnip } from "./utils/run-knip.js";
-import { runOxlint } from "./utils/run-oxlint.js";
-import { isSpinnerSilent, setSpinnerSilent, spinner } from "./utils/spinner.js";
+} from "./core/scoring/calculate-score.js";
+import { combineDiagnostics } from "./core/diagnostics/combine-diagnostics.js";
+import { discoverProject } from "./core/detection/discover-project.js";
+import { formatErrorChain } from "./cli/format-error-chain.js";
+import { highlighter } from "./cli/highlighter.js";
+import { computeJsxIncludePaths } from "./core/runners/jsx-include-paths.js";
+import { loadConfigWithSource } from "./core/config/load-config.js";
+import { isLoggerSilent, logger, setLoggerSilent } from "./cli/logger.js";
+import { resolveConfigRootDir } from "./core/config/resolve-config-root-dir.js";
+import { resolveLintIncludePaths } from "./core/runners/resolve-lint-include-paths.js";
+import { runKnip } from "./core/runners/run-knip.js";
+import { runOxlint } from "./core/runners/run-oxlint.js";
+import { isSpinnerSilent, setSpinnerSilent, spinner } from "./cli/spinner.js";
 
 interface ResolvedScanOptions {
   lint: boolean;

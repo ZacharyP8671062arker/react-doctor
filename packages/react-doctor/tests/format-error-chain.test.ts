@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import { formatErrorChain, getErrorChainMessages } from "../src/utils/format-error-chain.js";
+import { formatErrorChain, getErrorChainMessages } from "../src/cli/format-error-chain.js";
 
 describe("formatErrorChain", () => {
   it("returns the single message for a flat error", () => {

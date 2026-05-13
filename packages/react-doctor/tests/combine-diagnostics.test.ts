@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 import type { Diagnostic, ReactDoctorConfig } from "../src/types.js";
-import { combineDiagnostics } from "../src/utils/combine-diagnostics.js";
-import { computeJsxIncludePaths } from "../src/utils/jsx-include-paths.js";
+import { combineDiagnostics } from "../src/core/diagnostics/combine-diagnostics.js";
+import { computeJsxIncludePaths } from "../src/core/runners/jsx-include-paths.js";
 
 const createDiagnostic = (overrides: Partial<Diagnostic> = {}): Diagnostic => ({
   filePath: "src/app.tsx",
