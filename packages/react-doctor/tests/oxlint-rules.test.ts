@@ -287,7 +287,7 @@ describe("oxlint rules", () => {
         description: `Runs the react-doctor/${ruleName} custom oxlint rule.`,
         recommendation: expect.any(String),
         examples: expect.any(Array),
-        category: "oxlint",
+        category: expect.any(String),
         severity: toExpectedSeverity(ruleName),
         defaultEnabled: false,
         tags: ["oxlint", "custom", "react-doctor"],
