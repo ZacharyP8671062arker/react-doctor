@@ -1,6 +1,6 @@
 import type { Diagnostic } from "../types.js";
 
-export interface CategoryBreakdownEntry {
+interface CategoryBreakdownEntry {
   category: string;
   totalCount: number;
   errorCount: number;

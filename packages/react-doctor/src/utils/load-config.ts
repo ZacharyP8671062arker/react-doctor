@@ -10,7 +10,7 @@ import { validateConfigTypes } from "./validate-config-types.js";
 const CONFIG_FILENAME = "react-doctor.config.json";
 const PACKAGE_JSON_CONFIG_KEY = "reactDoctor";
 
-export interface LoadedReactDoctorConfig {
+interface LoadedReactDoctorConfig {
   config: ReactDoctorConfig;
   /**
    * Absolute path of the directory that contained the resolved config

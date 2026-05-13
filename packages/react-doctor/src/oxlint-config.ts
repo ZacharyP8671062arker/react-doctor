@@ -424,7 +424,7 @@ export const FRAMEWORK_SPECIFIC_RULE_KEYS: ReadonlySet<string> = new Set([
   ...Object.keys(TANSTACK_QUERY_RULES),
 ]);
 
-export interface RuleMetadataEntry {
+interface RuleMetadataEntry {
   requires?: ReadonlyArray<string>;
   tags: ReadonlySet<string>;
 }
@@ -591,7 +591,7 @@ export const RULE_METADATA: ReadonlyMap<string, RuleMetadataEntry> = new Map([
   ["react-doctor/no-dark-mode-glow", { tags: DESIGN_AND_TEST_NOISE_TAGS }],
 ]);
 
-export const buildCapabilities = (project: ProjectInfo): ReadonlySet<string> => {
+const buildCapabilities = (project: ProjectInfo): ReadonlySet<string> => {
   const capabilities = new Set<string>();
 
   capabilities.add(project.framework);
@@ -625,7 +625,7 @@ export const buildCapabilities = (project: ProjectInfo): ReadonlySet<string> => 
   return capabilities;
 };
 
-export const shouldEnableRule = (
+const shouldEnableRule = (
   requires: ReadonlyArray<string> | undefined,
   tags: ReadonlySet<string>,
   capabilities: ReadonlySet<string>,

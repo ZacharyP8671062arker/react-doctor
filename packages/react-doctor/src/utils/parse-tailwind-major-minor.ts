@@ -5,7 +5,7 @@
 // in addition to the major (e.g. the `size-N` shorthand only landed in
 // Tailwind v3.4 — gating purely on `major >= 3` would mis-fire on
 // v3.0 … v3.3 codebases).
-export interface TailwindMajorMinor {
+interface TailwindMajorMinor {
   major: number;
   minor: number;
 }

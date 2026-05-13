@@ -3,7 +3,7 @@ import { isPlainObject } from "./is-plain-object.js";
 import { compileGlobPattern } from "./match-glob-pattern.js";
 import { toRelativePath } from "./to-relative-path.js";
 
-export interface CompiledIgnoreOverride {
+interface CompiledIgnoreOverride {
   filePatterns: RegExp[];
   ruleIds: ReadonlySet<string>;
 }

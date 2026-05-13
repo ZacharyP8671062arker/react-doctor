@@ -7,7 +7,7 @@ import {
 } from "../constants.js";
 import type { Diagnostic, ScoreResult } from "../types.js";
 
-export interface ScoreBreakdown {
+interface ScoreBreakdown {
   errorRules: string[];
   warningRules: string[];
   errorPenalty: number;

@@ -1,4 +1,4 @@
-export interface ParsedFileLineArgument {
+interface ParsedFileLineArgument {
   filePath: string;
   line: number;
 }

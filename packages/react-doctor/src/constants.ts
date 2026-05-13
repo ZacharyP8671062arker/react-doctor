@@ -88,16 +88,6 @@ export const PROXY_OUTPUT_MAX_BYTES = 50 * 1024 * 1024;
 export const buildNoReactDependencyError = (directory: string): string =>
   `No React dependency found in ${directory}/package.json. Add "react" to dependencies (or peerDependencies) and re-run.`;
 
-// HACK: minimum React major versions for the deprecation rule gates in
-// `oxlint-config.ts`. React-19-deprecated APIs (forwardRef, useContext,
-// Foo.defaultProps) shouldn't fire on 17/18 codebases — those are still
-// the current surface there. The legacy react-dom root API
-// (render/hydrate/unmountComponentAtNode/findDOMNode) was deprecated
-// in 18, so we light those up one major earlier.
-export const REACT_19_DEPRECATION_MIN_MAJOR = 19;
-
-export const REACT_DOM_LEGACY_API_MIN_MAJOR = 18;
-
 // HACK: lookahead cap for JSX opener-span scanning; bounds worst-case
 // work on pathological files. Real openers stay well under this.
 export const JSX_OPENER_SCAN_MAX_LINES = 32;
@@ -109,15 +99,6 @@ export const SUPPRESSION_NEAR_MISS_MAX_LINES = 10;
 // `useEffectEvent` requires React 19+. Below the threshold, the rule
 // that suggests it (`prefer-use-effect-event`) stays silent.
 export const USE_EFFECT_EVENT_MIN_MAJOR = 19;
-
-// HACK: minimum Tailwind major.minor for the `size-N` shorthand. The
-// rule that suggests collapsing `w-N h-N` (`design-no-redundant-size-axes`)
-// requires Tailwind v3.4+ — recommending `size-N` to a v3.0…v3.3
-// project would generate classes that simply don't compile. Below
-// the threshold the rule stays silent. v4 inherits the shorthand,
-// so a single major.minor floor covers every supported Tailwind line.
-export const TAILWIND_SIZE_SHORTHAND_MIN_MAJOR = 3;
-export const TAILWIND_SIZE_SHORTHAND_MIN_MINOR = 4;
 
 // In the default human output, show several category sections like an
 // audit report, but cap each section so one noisy category does not
