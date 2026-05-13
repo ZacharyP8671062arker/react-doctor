@@ -173,10 +173,7 @@ import {
   tanstackStartServerFnMethodOrder,
   tanstackStartServerFnValidateInput,
 } from "./rules/tanstack-start.js";
-import {
-  hirNoDerivedComputationsInEffects,
-  hirNoSetStateInEffect,
-} from "./hir/index.js";
+import { hirNoDerivedComputationsInEffects, hirNoSetStateInEffect } from "./hir/index.js";
 import {
   advancedEventHandlerRefs,
   effectNeedsCleanup,
