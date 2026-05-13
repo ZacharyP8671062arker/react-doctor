@@ -10,6 +10,12 @@ export interface OxlintRuleSeverityMap {
 const REACT_DOCTOR_OXLINT_RULE_KEY_PREFIX = "react-doctor/";
 const REACT_HOOKS_JS_NAMESPACE = "react-hooks-js";
 const REACT_HOOKS_PLUGIN_SPECIFIER = "eslint-plugin-react-hooks";
+// HACK: oxlint-namespaces eslint-plugin-react-you-might-not-need-an-effect
+// under `effect/` to keep rule keys short. Mirrors v1 (oxlint-config.ts).
+// The plugin is opt-in: skipped when not installed.
+const YOU_MIGHT_NOT_NEED_EFFECT_NAMESPACE = "effect";
+const YOU_MIGHT_NOT_NEED_EFFECT_PLUGIN_SPECIFIER =
+  "eslint-plugin-react-you-might-not-need-an-effect";
 const DEFAULT_OXLINT_RULE_SEVERITY: OxlintRuleSeverityMap[string] = "warn";
 const NEXTJS_RULE_NAME_PREFIX = "nextjs-";
 const TANSTACK_AI_RULE_NAME_PREFIX = "tanstack-ai-";
@@ -66,6 +72,17 @@ const REACT_DOCTOR_ERROR_RULE_NAMES: ReadonlySet<string> = new Set([
   "server-no-mutable-module-state",
   "no-disabled-zoom",
 ]);
+
+export const YOU_MIGHT_NOT_NEED_EFFECT_OXLINT_RULES: OxlintRuleSeverityMap = {
+  "effect/no-derived-state": "warn",
+  "effect/no-chain-state-updates": "warn",
+  "effect/no-event-handler": "warn",
+  "effect/no-adjust-state-on-prop-change": "warn",
+  "effect/no-reset-all-state-on-prop-change": "warn",
+  "effect/no-pass-live-state-to-parent": "warn",
+  "effect/no-pass-data-to-parent": "warn",
+  "effect/no-initialize-state": "warn",
+};
 
 export const REACT_COMPILER_OXLINT_RULES: OxlintRuleSeverityMap = {
   "react-hooks-js/set-state-in-render": "error",
@@ -347,6 +364,11 @@ const RULE_METADATA: ReadonlyMap<string, RuleMetadataEntry> = new Map([
   withReactDoctorRuleKey("no-long-transition-duration", { tags: DESIGN_AND_TEST_NOISE_TAGS }),
 ]);
 
+const EMPTY_TAG_SET: ReadonlySet<string> = new Set();
+
+export const getReactDoctorRuleTags = (ruleKey: string): ReadonlySet<string> =>
+  RULE_METADATA.get(ruleKey)?.tags ?? EMPTY_TAG_SET;
+
 const REACT_DOCTOR_FRAMEWORK_RULE_GROUPS: ReadonlyArray<RuleGroupConfig> = [
   { rules: NEXTJS_OXLINT_RULES, requires: ["nextjs"] },
   { rules: REACT_NATIVE_OXLINT_RULES, requires: ["react-native"] },
@@ -413,6 +435,25 @@ const buildOptionalReactCompilerConfig = (
     rules: filterRulesToAvailable(
       REACT_COMPILER_OXLINT_RULES,
       REACT_HOOKS_JS_NAMESPACE,
+      plugin.availableRuleNames,
+    ),
+  };
+};
+
+const buildOptionalYouMightNotNeedEffectConfig = (
+  customRulesOnly: boolean,
+): { jsPlugin: ReactDoctorOxlintJsPluginEntry | null; rules: OxlintRuleSeverityMap } => {
+  if (customRulesOnly) return { jsPlugin: null, rules: {} };
+  const plugin = resolveOptionalJsPlugin(
+    YOU_MIGHT_NOT_NEED_EFFECT_NAMESPACE,
+    YOU_MIGHT_NOT_NEED_EFFECT_PLUGIN_SPECIFIER,
+  );
+  if (!plugin) return { jsPlugin: null, rules: {} };
+  return {
+    jsPlugin: plugin.entry,
+    rules: filterRulesToAvailable(
+      YOU_MIGHT_NOT_NEED_EFFECT_OXLINT_RULES,
+      YOU_MIGHT_NOT_NEED_EFFECT_NAMESPACE,
       plugin.availableRuleNames,
     ),
   };
@@ -551,8 +592,10 @@ export const createReactDoctorOxlintConfig = ({
     customRulesOnly,
     Boolean(projectInfo.hasReactCompiler),
   );
+  const youMightNotNeedEffectConfig = buildOptionalYouMightNotNeedEffectConfig(customRulesOnly);
   const jsPlugins: Array<string | ReactDoctorOxlintJsPluginEntry> = [];
   if (reactCompilerConfig.jsPlugin) jsPlugins.push(reactCompilerConfig.jsPlugin);
+  if (youMightNotNeedEffectConfig.jsPlugin) jsPlugins.push(youMightNotNeedEffectConfig.jsPlugin);
   jsPlugins.push(pluginPath);
   const enabledReactDoctorRules: OxlintRuleSeverityMap = {};
   addEnabledRules(
@@ -582,6 +625,7 @@ export const createReactDoctorOxlintConfig = ({
     rules: {
       ...(customRulesOnly ? {} : BUILTIN_OXLINT_RULES),
       ...reactCompilerConfig.rules,
+      ...youMightNotNeedEffectConfig.rules,
       ...enabledReactDoctorRules,
     },
   };

@@ -1,41 +1,15 @@
-import { PERFECT_SCORE } from "@/constants";
-import { getScoreLabel } from "@/utils/get-score-label";
+import { calculateScore, getScoreLabel, type ScoreDiagnostic } from "react-doctor-v2/score";
 
-const ERROR_RULE_PENALTY = 1.5;
-const WARNING_RULE_PENALTY = 0.75;
 const MAX_REQUEST_BODY_BYTES = 1_000_000;
 const MAX_DIAGNOSTICS_PER_REQUEST = 50_000;
 
-interface DiagnosticInput {
-  plugin: string;
-  rule: string;
-  severity: "error" | "warning";
+interface DiagnosticInput extends ScoreDiagnostic {
   message: string;
   help: string;
   line: number;
   column: number;
   category: string;
 }
-
-const calculateScore = (diagnostics: DiagnosticInput[]): number => {
-  if (diagnostics.length === 0) return PERFECT_SCORE;
-
-  const errorRules = new Set<string>();
-  const warningRules = new Set<string>();
-
-  for (const diagnostic of diagnostics) {
-    const ruleKey = `${diagnostic.plugin}/${diagnostic.rule}`;
-    if (diagnostic.severity === "error") {
-      errorRules.add(ruleKey);
-    } else {
-      warningRules.add(ruleKey);
-    }
-  }
-
-  const penalty = errorRules.size * ERROR_RULE_PENALTY + warningRules.size * WARNING_RULE_PENALTY;
-
-  return Math.max(0, Math.round(PERFECT_SCORE - penalty));
-};
 
 const isValidDiagnostic = (value: unknown): value is DiagnosticInput => {
   if (typeof value !== "object" || value === null) return false;

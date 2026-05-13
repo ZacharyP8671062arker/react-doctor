@@ -17,7 +17,7 @@ describe("deprecated API shim", () => {
         rootDirectory: path.resolve("src"),
         projectName: "react-doctor-v2",
         reactVersion: null,
-        tailwindVersion: null,
+        tailwindVersion: expect.anything(),
         framework: "unknown",
         hasTypeScript: true,
         hasReactCompiler: false,

@@ -31,7 +31,7 @@ export const renderingScriptDeferAsync = defineRule<Rule>({
           isNodeOfType(attribute.name, "JSXIdentifier") &&
           attribute.name.name === "type",
       );
-      const typeValue = isNodeOfType(typeAttribute.value, "Literal")
+      const typeValue = isNodeOfType(typeAttribute?.value, "Literal")
         ? typeAttribute.value.value
         : null;
       if (typeof typeValue === "string" && !EXECUTABLE_SCRIPT_TYPES.has(typeValue)) return;

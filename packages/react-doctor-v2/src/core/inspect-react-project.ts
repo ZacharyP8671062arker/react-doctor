@@ -7,6 +7,8 @@ import { calculateReactDoctorScore } from "./reports.js";
 import { OXLINT_CHECK_ID, runOxlint } from "./runners/oxlint.js";
 import { loadReactDoctorConfig, resolveConfigRootDirectory } from "./config.js";
 import { discoverReactProject, toOxlintProjectInfo } from "./project.js";
+import { proxyFetch } from "./proxy-fetch.js";
+import { tryScoreFromApi } from "./try-score-from-api.js";
 import { createRuleRegistry } from "./rules/index.js";
 import { runCodebaseAnalysis } from "./rules/codebase/analyzer/index.js";
 import {
@@ -162,13 +164,15 @@ export const inspectReactProjectCore = async (
   );
   const filteredChecks = applyIssueFiltering(allChecks, issues);
   const hasFailedChecks = filteredChecks.some((check) => check.status === "failed");
+  const remoteScore = config.offline ? null : await tryScoreFromApi(issues, proxyFetch);
+  const score = remoteScore ?? calculateReactDoctorScore(issues);
 
   return {
     status: hasFailedChecks ? "completed-with-errors" : "completed",
     project,
     issues,
     checks: filteredChecks,
-    score: calculateReactDoctorScore(issues),
+    score,
     startedAt: startedAt.toISOString(),
     completedAt: completedAt.toISOString(),
     durationMilliseconds: globalThis.performance.now() - startedMilliseconds,

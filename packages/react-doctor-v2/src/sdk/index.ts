@@ -8,6 +8,8 @@ export {
   buildReactDoctorJsonReport,
   summarizeReactDoctorResult,
 } from "../core/reports.js";
+export { calculateScore, getScoreLabel } from "../core/score.js";
+export type { CalculateScoreOptions, ScoreDiagnostic } from "../core/score.js";
 export {
   discoverReactProject,
   parseReactMajorVersion,

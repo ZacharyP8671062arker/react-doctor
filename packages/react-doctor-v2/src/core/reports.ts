@@ -1,10 +1,4 @@
-import {
-  ERROR_RULE_PENALTY,
-  PERFECT_SCORE,
-  SCORE_GOOD_THRESHOLD,
-  SCORE_OK_THRESHOLD,
-  WARNING_RULE_PENALTY,
-} from "../constants.js";
+import { calculateScore, getScoreLabel, type ScoreDiagnostic } from "./score.js";
 import type {
   ReactDoctorIssue,
   ReactDoctorJsonReport,
@@ -13,42 +7,15 @@ import type {
   ReactDoctorScore,
 } from "./types.js";
 
-interface IssueRuleCounts {
-  errorRuleCount: number;
-  warningRuleCount: number;
-}
-
-const getIssueRuleKey = (issue: ReactDoctorIssue): string =>
-  issue.source?.pluginName && issue.source.ruleId
-    ? `${issue.source.pluginName}/${issue.source.ruleId}`
-    : (issue.source?.ruleId ?? issue.id);
-
-const getScoreLabel = (score: number): string => {
-  if (score >= SCORE_GOOD_THRESHOLD) return "Great";
-  if (score >= SCORE_OK_THRESHOLD) return "Needs work";
-  return "Critical";
-};
-
-const countIssueRules = (issues: ReactDoctorIssue[]): IssueRuleCounts => {
-  const errorRules = new Set<string>();
-  const warningRules = new Set<string>();
-
-  for (const issue of issues) {
-    const ruleKey = getIssueRuleKey(issue);
-    if (issue.severity === "error") {
-      errorRules.add(ruleKey);
-      continue;
-    }
-    warningRules.add(ruleKey);
-  }
-
-  return { errorRuleCount: errorRules.size, warningRuleCount: warningRules.size };
+const toScoreDiagnostic = (issue: ReactDoctorIssue): ScoreDiagnostic => {
+  const plugin = issue.source?.pluginName ?? "react-doctor";
+  const rule = issue.source?.ruleId ?? issue.id;
+  const severity: "error" | "warning" = issue.severity === "error" ? "error" : "warning";
+  return { plugin, rule, severity };
 };
 
 export const calculateReactDoctorScore = (issues: ReactDoctorIssue[]): ReactDoctorScore => {
-  const { errorRuleCount, warningRuleCount } = countIssueRules(issues);
-  const penalty = errorRuleCount * ERROR_RULE_PENALTY + warningRuleCount * WARNING_RULE_PENALTY;
-  const value = Math.max(0, Math.round(PERFECT_SCORE - penalty));
+  const value = calculateScore(issues.map(toScoreDiagnostic));
   return { value, label: getScoreLabel(value) };
 };
 

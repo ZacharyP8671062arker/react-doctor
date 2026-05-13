@@ -1,5 +1,29 @@
 import path from "node:path";
+import { isTestFilePath } from "./is-test-file-path.js";
+import { getReactDoctorRuleTags } from "./rules/lint/config.js";
 import type { ReactDoctorConfig, ReactDoctorIssue } from "./types.js";
+
+const TEST_NOISE_TAG = "test-noise";
+const WRAPPED_RULE_ID_PATTERN = /^([a-zA-Z][\w-]*)\(([^)]+)\)$/;
+
+const toMetadataRuleKey = (issue: ReactDoctorIssue): string | null => {
+  const ruleId = issue.source?.ruleId;
+  if (!ruleId) return null;
+  const wrapped = WRAPPED_RULE_ID_PATTERN.exec(ruleId);
+  if (wrapped) return `${wrapped[1]}/${wrapped[2]}`;
+  if (issue.source?.pluginName && !ruleId.includes("/")) {
+    return `${issue.source.pluginName}/${ruleId}`;
+  }
+  return ruleId;
+};
+
+const isAutoSuppressedTestNoise = (issue: ReactDoctorIssue, relativeFilePath: string): boolean => {
+  if (!relativeFilePath) return false;
+  const ruleKey = toMetadataRuleKey(issue);
+  if (!ruleKey) return false;
+  if (!getReactDoctorRuleTags(ruleKey).has(TEST_NOISE_TAG)) return false;
+  return isTestFilePath(relativeFilePath);
+};
 
 interface CompiledIgnoreOverride {
   files: string[];
@@ -179,6 +203,7 @@ export const filterReactDoctorIssues = (
 
   return issues.filter((issue) => {
     const relativeFilePath = toRelativeIssuePath(issue, rootDirectory);
+    if (isAutoSuppressedTestNoise(issue, relativeFilePath)) return false;
     if (matchesRule(issue, ignoredRules)) return false;
     if (
       relativeFilePath &&

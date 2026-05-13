@@ -9,6 +9,7 @@ import { ReactDoctorCheckFailedError, ReactDoctorRunnerUnavailableError } from "
 import { createReactDoctorOxlintConfig, reactDoctorOxlintRuleMetadata } from "../rules/index.js";
 import type { ReactDoctorOxlintProjectInfo } from "../rules/index.js";
 import type { ReactDoctorIssue } from "../types.js";
+import { collectIgnorePatterns } from "./collect-ignore-patterns.js";
 
 interface OxlintSpan {
   line?: number;
@@ -52,6 +53,14 @@ export const OXLINT_CHECK_ID = "react-doctor/oxlint";
 const esmRequire = createRequire(import.meta.url);
 const OXLINT_STDERR_PREVIEW_LENGTH = 2_000;
 const USER_LINT_CONFIG_FILENAMES = [".oxlintrc.json", ".eslintrc.json"];
+const TSCONFIG_FILENAMES = ["tsconfig.json", "tsconfig.base.json"];
+
+const resolveTsconfigRelativePath = (rootDirectory: string): string | null => {
+  for (const fileName of TSCONFIG_FILENAMES) {
+    if (existsSync(path.join(rootDirectory, fileName))) return `./${fileName}`;
+  }
+  return null;
+};
 
 const metadataByRuleKey = new Map(
   reactDoctorOxlintRuleMetadata.map((metadata) => [metadata.oxlintRuleKey, metadata]),
@@ -236,8 +245,24 @@ export const runOxlint = async (options: RunOxlintOptions): Promise<ReactDoctorI
       "--format",
       "json",
       ...(options.excludePatterns ?? []).flatMap((pattern) => ["--ignore-pattern", pattern]),
-      ...(options.includePaths?.length ? options.includePaths : ["."]),
     ];
+    if (options.project.hasTypeScript) {
+      const tsconfigRelativePath = resolveTsconfigRelativePath(options.rootDirectory);
+      if (tsconfigRelativePath) args.push("--tsconfig", tsconfigRelativePath);
+    }
+    // HACK: oxlint reads `.eslintignore` automatically, but the moment we pass
+    // `--ignore-path` it stops doing so — so `.eslintignore` patterns must be
+    // included in the combined file too. Mirrors v1's `collectIgnorePatterns`,
+    // which also pulls in `.prettierignore` and `.gitattributes` linguist
+    // annotations so vendored/generated files (e.g. Monaco editor's bundled
+    // tsWorker.js in supabase) don't get scanned and blow up wall-clock.
+    const combinedPatterns = collectIgnorePatterns(options.rootDirectory);
+    if (combinedPatterns.length > 0) {
+      const combinedIgnorePath = path.join(configDirectory, "combined.ignore");
+      await fs.writeFile(combinedIgnorePath, `${combinedPatterns.join("\n")}\n`);
+      args.push("--ignore-path", combinedIgnorePath);
+    }
+    args.push(...(options.includePaths?.length ? options.includePaths : ["."]));
     const { stdout, stderr } = await spawnOxlint(args, options.rootDirectory, options.signal);
     return parseOxlintOutput(stdout, options.rootDirectory, stderr);
   } finally {

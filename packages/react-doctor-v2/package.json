@@ -38,6 +38,10 @@
       "types": "./dist/compat.d.ts",
       "default": "./dist/compat.js"
     },
+    "./score": {
+      "types": "./dist/score.d.ts",
+      "default": "./dist/score.js"
+    },
     "./eslint-plugin": {
       "types": "./dist/eslint-plugin.d.ts",
       "default": "./dist/eslint-plugin.js"

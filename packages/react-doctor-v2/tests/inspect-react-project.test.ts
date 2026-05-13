@@ -32,7 +32,6 @@ describe("inspectReactProject", () => {
       framework: "unknown",
       hasTypeScript: true,
       reactVersion: null,
-      tailwindVersion: null,
       sourceFileCount: expect.any(Number),
     });
     expect(result.issues).toEqual([]);

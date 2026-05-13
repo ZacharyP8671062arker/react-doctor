@@ -299,14 +299,15 @@ const expandSimpleWorkspacePattern = async (
   rootDirectory: string,
   pattern: string,
 ): Promise<string[]> => {
-  const wildcardIndex = pattern.indexOf("*");
+  const normalizedPattern = pattern.replace(/\/\*\*$/, "/*");
+  const wildcardIndex = normalizedPattern.indexOf("*");
   if (wildcardIndex < 0) {
-    const directory = path.resolve(rootDirectory, pattern);
+    const directory = path.resolve(rootDirectory, normalizedPattern);
     return (await hasPackageJson(directory)) ? [directory] : [];
   }
 
-  const prefix = pattern.slice(0, wildcardIndex).replace(/\/$/, "");
-  const suffix = pattern.slice(wildcardIndex + 1).replace(/^\//, "");
+  const prefix = normalizedPattern.slice(0, wildcardIndex).replace(/\/$/, "");
+  const suffix = normalizedPattern.slice(wildcardIndex + 1).replace(/^\//, "");
   const baseDirectory = path.resolve(rootDirectory, prefix || ".");
   let entries: string[];
   try {

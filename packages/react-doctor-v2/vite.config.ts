@@ -16,6 +16,7 @@ export default defineConfig({
       entry: {
         sdk: "./src/sdk/index.ts",
         compat: "./src/sdk/compat.ts",
+        score: "./src/core/score.ts",
         "eslint-plugin": "./src/eslint-plugin.ts",
         "oxlint-plugin": "./src/oxlint-plugin.ts",
       },

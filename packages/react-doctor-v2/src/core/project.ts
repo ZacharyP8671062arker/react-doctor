@@ -135,11 +135,146 @@ const mergeManifestCatalogs = (catalogs: CatalogInfo, manifest: PackageJsonObjec
   }
 };
 
+const PNPM_WORKSPACE_FILENAME = "pnpm-workspace.yaml";
+
+const stripYamlComment = (line: string): string => {
+  let quote: string | null = null;
+  for (let index = 0; index < line.length; index++) {
+    const character = line[index];
+    if ((character === '"' || character === "'") && line[index - 1] !== "\\") {
+      quote = quote === character ? null : (quote ?? character);
+    }
+    if (character === "#" && !quote) return line.slice(0, index);
+  }
+  return line;
+};
+
+const stripYamlValue = (value: string): string =>
+  stripYamlComment(value)
+    .trim()
+    .replace(/^["']|["']$/g, "");
+
+interface PnpmWorkspaceFile {
+  patterns: string[];
+  defaultCatalog: Map<string, string>;
+  namedCatalogs: Map<string, Map<string, string>>;
+}
+
+const parsePnpmWorkspaceFile = (content: string): PnpmWorkspaceFile => {
+  const result: PnpmWorkspaceFile = {
+    patterns: [],
+    defaultCatalog: new Map(),
+    namedCatalogs: new Map(),
+  };
+  type Section = "none" | "packages" | "catalog" | "catalogs" | "named-catalog";
+  let section: Section = "none";
+  let currentCatalogName = "";
+
+  for (const rawLine of content.split("\n")) {
+    const line = stripYamlComment(rawLine);
+    if (line.trim().length === 0) continue;
+    const indent = line.length - line.trimStart().length;
+    const trimmed = line.trim();
+
+    if (indent === 0) {
+      if (trimmed === "packages:") {
+        section = "packages";
+        continue;
+      }
+      if (trimmed === "catalog:") {
+        section = "catalog";
+        continue;
+      }
+      if (trimmed === "catalogs:") {
+        section = "catalogs";
+        continue;
+      }
+      // Flat-form list item ("packages:\n- apps/*") — stay in the
+      // current section instead of resetting.
+      if (trimmed.startsWith("-") && section === "packages") {
+        const pattern = stripYamlValue(trimmed.slice(1));
+        if (pattern) result.patterns.push(pattern);
+        continue;
+      }
+      section = "none";
+      continue;
+    }
+
+    if (section === "packages") {
+      if (trimmed.startsWith("-")) {
+        const pattern = stripYamlValue(trimmed.slice(1));
+        if (pattern) result.patterns.push(pattern);
+      }
+      continue;
+    }
+
+    if (section === "catalog") {
+      const colonIndex = trimmed.indexOf(":");
+      if (colonIndex > 0) {
+        const key = stripYamlValue(trimmed.slice(0, colonIndex));
+        const value = stripYamlValue(trimmed.slice(colonIndex + 1));
+        if (key && value) result.defaultCatalog.set(key, value);
+      }
+      continue;
+    }
+
+    if (section === "catalogs") {
+      if (trimmed.endsWith(":") && !trimmed.includes(" ")) {
+        currentCatalogName = stripYamlValue(trimmed.slice(0, -1));
+        result.namedCatalogs.set(currentCatalogName, new Map());
+        section = "named-catalog";
+      }
+      continue;
+    }
+
+    if (section === "named-catalog") {
+      if (indent <= 2 && trimmed.endsWith(":") && !trimmed.includes(" ")) {
+        currentCatalogName = stripYamlValue(trimmed.slice(0, -1));
+        result.namedCatalogs.set(currentCatalogName, new Map());
+        continue;
+      }
+      const colonIndex = trimmed.indexOf(":");
+      if (colonIndex > 0 && currentCatalogName) {
+        const key = stripYamlValue(trimmed.slice(0, colonIndex));
+        const value = stripYamlValue(trimmed.slice(colonIndex + 1));
+        if (key && value) {
+          const catalog = result.namedCatalogs.get(currentCatalogName);
+          if (catalog) catalog.set(key, value);
+        }
+      }
+    }
+  }
+
+  return result;
+};
+
+const readPnpmWorkspaceFile = async (directory: string): Promise<PnpmWorkspaceFile | null> => {
+  try {
+    const content = await fs.readFile(path.join(directory, PNPM_WORKSPACE_FILENAME), "utf8");
+    return parsePnpmWorkspaceFile(content);
+  } catch {
+    return null;
+  }
+};
+
+const mergePnpmWorkspaceCatalogs = (catalogs: CatalogInfo, file: PnpmWorkspaceFile): void => {
+  for (const [name, version] of file.defaultCatalog) {
+    catalogs.defaultVersions.set(name, version);
+  }
+  for (const [catalogName, entries] of file.namedCatalogs) {
+    const target = catalogs.groupedVersions.get(catalogName) ?? new Map<string, string>();
+    for (const [name, version] of entries) target.set(name, version);
+    catalogs.groupedVersions.set(catalogName, target);
+  }
+};
+
 const collectAncestorCatalogs = async (rootDirectory: string): Promise<CatalogInfo> => {
   const catalogs = createEmptyCatalogInfo();
   let currentDirectory = rootDirectory;
   while (true) {
     mergeManifestCatalogs(catalogs, await readPackageJson(currentDirectory));
+    const pnpmFile = await readPnpmWorkspaceFile(currentDirectory);
+    if (pnpmFile) mergePnpmWorkspaceCatalogs(catalogs, pnpmFile);
     const parentDirectory = path.dirname(currentDirectory);
     if (parentDirectory === currentDirectory) return catalogs;
     currentDirectory = parentDirectory;
@@ -360,10 +495,130 @@ export const toOxlintProjectInfo = (project: ReactProjectInfo): ReactDoctorOxlin
   };
 };
 
+const hasFile = async (filePath: string): Promise<boolean> => {
+  try {
+    const stats = await fs.stat(filePath);
+    return stats.isFile();
+  } catch {
+    return false;
+  }
+};
+
+const toNpmWorkspacePatterns = (manifest: PackageJsonObject | null): string[] => {
+  const workspaces: unknown = manifest?.workspaces;
+  if (!workspaces) return [];
+  if (Array.isArray(workspaces)) {
+    return workspaces.filter((value): value is string => typeof value === "string");
+  }
+  if (isRecord(workspaces) && Array.isArray(workspaces.packages)) {
+    return workspaces.packages.filter((value): value is string => typeof value === "string");
+  }
+  return [];
+};
+
+const isMonorepoRoot = async (directory: string): Promise<boolean> => {
+  const manifest = await readPackageJson(directory);
+  if (toNpmWorkspacePatterns(manifest).length > 0) return true;
+  return hasFile(path.join(directory, PNPM_WORKSPACE_FILENAME));
+};
+
+const findAncestorMonorepoRoot = async (startDirectory: string): Promise<string | null> => {
+  let currentDirectory = path.dirname(startDirectory);
+  while (currentDirectory !== path.dirname(currentDirectory)) {
+    if (await isMonorepoRoot(currentDirectory)) return currentDirectory;
+    currentDirectory = path.dirname(currentDirectory);
+  }
+  return null;
+};
+
+const expandWorkspacePattern = async (
+  rootDirectory: string,
+  pattern: string,
+): Promise<string[]> => {
+  // HACK: collapse "**" to "*" — sufficient for dependency lookup in
+  // the common (single-level) workspace layout. Deep nested workspaces
+  // are rare and finding tailwindcss in *any* workspace is enough.
+  const normalized = pattern.replace(/\*\*/g, "*");
+  const wildcardIndex = normalized.indexOf("*");
+  if (wildcardIndex < 0) {
+    const directory = path.resolve(rootDirectory, normalized);
+    return (await hasFile(path.join(directory, PACKAGE_JSON_FILENAME))) ? [directory] : [];
+  }
+  const prefix = normalized.slice(0, wildcardIndex).replace(/\/$/, "");
+  const suffix = normalized.slice(wildcardIndex + 1).replace(/^\//, "");
+  const baseDirectory = path.resolve(rootDirectory, prefix || ".");
+  let entries: Dirent[];
+  try {
+    entries = await fs.readdir(baseDirectory, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  const directories: string[] = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    if (entry.name.startsWith(".") || IGNORED_DIRECTORY_NAMES.has(entry.name)) continue;
+    const candidate = path.join(baseDirectory, entry.name, suffix);
+    if (await hasFile(path.join(candidate, PACKAGE_JSON_FILENAME))) directories.push(candidate);
+  }
+  return directories;
+};
+
+const findTailwindcssInWorkspaces = async (
+  monorepoRoot: string,
+  catalogs: CatalogInfo,
+): Promise<string | null> => {
+  const manifest = await readPackageJson(monorepoRoot);
+  const npmPatterns = toNpmWorkspacePatterns(manifest);
+  const pnpmFile = await readPnpmWorkspaceFile(monorepoRoot);
+  const pnpmPatterns = pnpmFile?.patterns ?? [];
+  const patterns = [...new Set([...npmPatterns, ...pnpmPatterns])].filter(
+    (entry) => !entry.startsWith("!"),
+  );
+
+  for (const pattern of patterns) {
+    const directories = await expandWorkspacePattern(monorepoRoot, pattern);
+    for (const directory of directories) {
+      const workspaceManifest = await readPackageJson(directory);
+      const dependencies = collectDependencies(workspaceManifest);
+      const resolved = toResolvedDependencyVersion(
+        "tailwindcss",
+        dependencies.get("tailwindcss"),
+        catalogs,
+      );
+      if (resolved) return resolved;
+    }
+  }
+  return null;
+};
+
 export const discoverReactProject = async (rootDirectory: string): Promise<ReactProjectInfo> => {
   const resolvedRootDirectory = path.resolve(rootDirectory);
   const packageInfo = await readNearestPackageInfo(resolvedRootDirectory);
   const dependencyInfo = getDependencyInfo(packageInfo);
+
+  let tailwindVersion = dependencyInfo.tailwindVersion;
+  if (!tailwindVersion && (await isMonorepoRoot(resolvedRootDirectory))) {
+    tailwindVersion = await findTailwindcssInWorkspaces(
+      resolvedRootDirectory,
+      packageInfo.catalogs,
+    );
+  }
+  // HACK: leaf workspace inside a monorepo — walk up to the ancestor
+  // monorepo root and search its sibling workspaces for tailwindcss.
+  // Mirrors v1's findDependencyInfoFromMonorepoRoot. Trade-off: a leaf
+  // package with no Tailwind that lives inside a Tailwind-using
+  // monorepo will be (correctly) treated as Tailwind-capable, since the
+  // toolchain it ships against is Tailwind-flavoured.
+  if (!tailwindVersion) {
+    const ancestorMonorepoRoot = await findAncestorMonorepoRoot(resolvedRootDirectory);
+    if (ancestorMonorepoRoot) {
+      tailwindVersion = await findTailwindcssInWorkspaces(
+        ancestorMonorepoRoot,
+        packageInfo.catalogs,
+      );
+    }
+  }
+
   const sourceFileInfo = await collectSourceFileInfo(resolvedRootDirectory);
   const hasReactCompiler =
     dependencyInfo.hasReactCompiler ||
@@ -376,7 +631,7 @@ export const discoverReactProject = async (rootDirectory: string): Promise<React
     reactVersion: dependencyInfo.reactVersion,
     reactMajorVersion: parseReactMajorVersion(dependencyInfo.reactVersion),
     reactPeerDependencyRange: dependencyInfo.reactPeerDependencyRange,
-    tailwindVersion: dependencyInfo.tailwindVersion,
+    tailwindVersion,
     framework: dependencyInfo.framework,
     hasTypeScript: sourceFileInfo.hasTypeScript,
     hasReactCompiler,

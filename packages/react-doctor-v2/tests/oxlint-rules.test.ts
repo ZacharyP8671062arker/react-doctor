@@ -138,7 +138,6 @@ describe("oxlint rules", () => {
 
     expect(config.plugins).toEqual(["react", "jsx-a11y"]);
     expect(config.jsPlugins).toContain("/tmp/react-doctor-plugin.js");
-    expect(config.jsPlugins).not.toContainEqual(expect.objectContaining({ name: "effect" }));
     expect(config.categories).toEqual({
       correctness: "off",
       nursery: "off",

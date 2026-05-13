@@ -1,9 +1,11 @@
 import { spawnSync } from "node:child_process";
+import fs from "node:fs/promises";
 import path from "node:path";
 import { Command } from "commander";
 import { CANONICAL_GITHUB_URL, DEFAULT_DIRECTORY, EXIT_FAILURE_CODE } from "../constants.js";
 import { handleCliError } from "./handle-error.js";
 import { highlighter } from "./highlighter.js";
+import { printReactReviewCta, printScoreHeader } from "./render-score-header.js";
 import {
   buildReactDoctorJsonReport,
   createReactDoctor,
@@ -49,6 +51,83 @@ const isReactWorkspace = (workspace: WorkspaceInfo): boolean =>
     workspace.dependencyNames.has(dependencyName),
   );
 
+const FILESYSTEM_WALK_IGNORED_DIRECTORIES = new Set([
+  ".git",
+  ".next",
+  ".nuxt",
+  ".output",
+  ".svelte-kit",
+  ".turbo",
+  "build",
+  "coverage",
+  "dist",
+  "node_modules",
+  "out",
+  "storybook-static",
+]);
+
+interface FilesystemPackageManifest {
+  dependencies?: Record<string, unknown>;
+  devDependencies?: Record<string, unknown>;
+  peerDependencies?: Record<string, unknown>;
+  optionalDependencies?: Record<string, unknown>;
+}
+
+const hasReactDependencyInManifest = (manifest: FilesystemPackageManifest): boolean => {
+  for (const bucket of [
+    manifest.dependencies,
+    manifest.devDependencies,
+    manifest.peerDependencies,
+    manifest.optionalDependencies,
+  ]) {
+    if (!bucket) continue;
+    for (const dependencyName of REACT_PROJECT_DEPENDENCIES) {
+      if (dependencyName in bucket) return true;
+    }
+  }
+  return false;
+};
+
+const discoverReactProjectsByFilesystem = async (rootDirectory: string): Promise<string[]> => {
+  const directories: string[] = [];
+  const pending: string[] = [rootDirectory];
+
+  while (pending.length > 0) {
+    const current = pending.shift();
+    if (!current) continue;
+
+    try {
+      const manifestText = await fs.readFile(path.join(current, "package.json"), "utf8");
+      const manifest = JSON.parse(manifestText) as FilesystemPackageManifest;
+      if (hasReactDependencyInManifest(manifest)) {
+        directories.push(current);
+      }
+    } catch {
+      // No package.json or unreadable — keep walking.
+    }
+
+    let entries: Array<{ name: string; isDirectory: () => boolean }>;
+    try {
+      entries = await fs.readdir(current, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+
+    for (const entry of entries) {
+      if (
+        !entry.isDirectory() ||
+        entry.name.startsWith(".") ||
+        FILESYSTEM_WALK_IGNORED_DIRECTORIES.has(entry.name)
+      ) {
+        continue;
+      }
+      pending.push(path.join(current, entry.name));
+    }
+  }
+
+  return directories.sort((first, second) => first.localeCompare(second));
+};
+
 const resolveProjectDirectories = async (
   rootDirectory: string,
   configHasRootDirectory: boolean,
@@ -61,9 +140,17 @@ const resolveProjectDirectories = async (
     }),
   );
   const reactWorkspaces = workspaces.filter(isReactWorkspace);
-  if (reactWorkspaces.length === 0) return [rootDirectory];
+  if (reactWorkspaces.length > 1) {
+    return reactWorkspaces.map((workspace) => workspace.directory);
+  }
+  if (reactWorkspaces.length === 1) {
+    const onlyDirectory = reactWorkspaces[0].directory;
+    if (onlyDirectory !== rootDirectory) return [onlyDirectory];
+  }
+  const filesystemDirectories = await discoverReactProjectsByFilesystem(rootDirectory);
+  if (filesystemDirectories.length > 0) return filesystemDirectories;
   if (reactWorkspaces.length === 1) return [reactWorkspaces[0].directory];
-  return reactWorkspaces.map((workspace) => workspace.directory);
+  return [rootDirectory];
 };
 
 const getGitFiles = (rootDirectory: string, args: string[]): string[] => {
@@ -156,6 +243,37 @@ const formatLocation = (issue: ReactDoctorIssue): string => {
   return highlighter.dim(` ${location.filePath}${line}${column}`);
 };
 
+const printIssueSections = (issues: ReactDoctorIssue[]): void => {
+  for (const [category, categoryIssues] of groupIssuesByCategory(issues)) {
+    console.log("");
+    console.log(highlighter.bold(category));
+    for (const issue of categoryIssues) {
+      const marker = issue.severity === "error" ? highlighter.error("✖") : highlighter.warn("!");
+      console.log(`${marker} ${issue.title}${formatLocation(issue)}`);
+      console.log(`  ${issue.message}`);
+      if (issue.recommendation) console.log(`  ${highlighter.dim(issue.recommendation)}`);
+    }
+  }
+};
+
+const printProjectHeader = (result: ReactDoctorResult): void => {
+  console.log(
+    `${highlighter.bold(result.project.projectName)} ${highlighter.dim(result.project.rootDirectory)}`,
+  );
+  console.log("");
+};
+
+const printResultScoreBlock = (result: ReactDoctorResult): void => {
+  const scoreValue = result.score?.value ?? 100;
+  const scoreLabel = result.score?.label ?? "Great";
+  printScoreHeader(scoreValue, scoreLabel);
+  if (result.issues.length > 0) {
+    const issueCountLabel = `${result.issues.length} issue${result.issues.length === 1 ? "" : "s"}`;
+    console.log(`  ${highlighter.dim(issueCountLabel)}`);
+    console.log("");
+  }
+};
+
 const printInspectionResult = (result: ReactDoctorResult, flags: CliFlags): void => {
   if (flags.json) {
     const report = buildReactDoctorJsonReport(result);
@@ -167,29 +285,20 @@ const printInspectionResult = (result: ReactDoctorResult, flags: CliFlags): void
 
   console.log(`react-doctor ${highlighter.dim(`v${VERSION}`)}`);
   console.log("");
-  console.log(
-    `${highlighter.bold(result.project.projectName)} ${highlighter.dim(result.project.rootDirectory)}`,
-  );
-  console.log(
-    `${result.score?.value ?? 100}/100 ${highlighter.dim(result.score?.label ?? "Great")} · ${result.issues.length} issue${result.issues.length === 1 ? "" : "s"}`,
-  );
+  printProjectHeader(result);
 
   if (result.issues.length === 0) {
-    console.log("");
     console.log(`${highlighter.success("✔")} No React Doctor issues found.`);
+    console.log("");
+    printResultScoreBlock(result);
+    printReactReviewCta();
     return;
   }
 
-  for (const [category, issues] of groupIssuesByCategory(result.issues)) {
-    console.log("");
-    console.log(highlighter.bold(category));
-    for (const issue of issues) {
-      const marker = issue.severity === "error" ? highlighter.error("✖") : highlighter.warn("!");
-      console.log(`${marker} ${issue.title}${formatLocation(issue)}`);
-      console.log(`  ${issue.message}`);
-      if (issue.recommendation) console.log(`  ${highlighter.dim(issue.recommendation)}`);
-    }
-  }
+  printIssueSections(result.issues);
+  console.log("");
+  printResultScoreBlock(result);
+  printReactReviewCta();
 };
 
 const toAggregateJsonReport = (results: ReactDoctorResult[]) => {
@@ -249,14 +358,17 @@ const printInspectionResults = (results: ReactDoctorResult[], flags: CliFlags): 
   console.log(`react-doctor ${highlighter.dim(`v${VERSION}`)}`);
   console.log("");
   for (const result of results) {
-    console.log(
-      `${highlighter.bold(result.project.projectName)} ${highlighter.dim(result.project.rootDirectory)}`,
-    );
-    console.log(
-      `${result.score?.value ?? 100}/100 ${highlighter.dim(result.score?.label ?? "Great")} · ${result.issues.length} issue${result.issues.length === 1 ? "" : "s"}`,
-    );
-    console.log("");
+    printProjectHeader(result);
+    if (result.issues.length === 0) {
+      console.log(`${highlighter.success("✔")} No React Doctor issues found.`);
+      console.log("");
+    } else {
+      printIssueSections(result.issues);
+      console.log("");
+    }
+    printResultScoreBlock(result);
   }
+  printReactReviewCta();
 };
 
 const program = new Command()
