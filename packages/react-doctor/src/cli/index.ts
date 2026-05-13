@@ -324,10 +324,11 @@ const resolveBooleanInspectOption = (
   flagValue: boolean,
   configValue: boolean | undefined,
   defaultValue: boolean,
-): boolean | undefined => {
+): boolean => {
   const cliValue = getCliOptionOverride(command, optionName, flagValue);
   if (cliValue !== undefined) return cliValue;
-  return configValue === undefined ? defaultValue : undefined;
+  if (configValue !== undefined) return configValue;
+  return defaultValue;
 };
 
 const normalizeFailOnLevel = (value: string | undefined): ReactDoctorFailOnLevel => {
