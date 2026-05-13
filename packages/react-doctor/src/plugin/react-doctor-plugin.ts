@@ -174,6 +174,10 @@ import {
   tanstackStartServerFnValidateInput,
 } from "./rules/tanstack-start.js";
 import {
+  hirNoDerivedComputationsInEffects,
+  hirNoSetStateInEffect,
+} from "./hir/index.js";
+import {
   advancedEventHandlerRefs,
   effectNeedsCleanup,
   noCascadingSetState,
@@ -227,6 +231,8 @@ const plugin: RulePlugin = {
     "rerender-defer-reads-hook": rerenderDeferReadsHook,
     "advanced-event-handler-refs": advancedEventHandlerRefs,
     "effect-needs-cleanup": effectNeedsCleanup,
+    "hir-no-set-state-in-effect": hirNoSetStateInEffect,
+    "hir-no-derived-computations-in-effects": hirNoDerivedComputationsInEffects,
 
     "no-generic-handler-names": noGenericHandlerNames,
     "no-giant-component": noGiantComponent,
