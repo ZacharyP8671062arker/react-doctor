@@ -1,0 +1,9 @@
+{
+  "mode": "pre",
+  "tag": "beta",
+  "initialVersions": {
+    "react-doctor": "0.1.6",
+    "website": "0.1.0"
+  },
+  "changesets": []
+}
