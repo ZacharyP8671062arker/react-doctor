@@ -1,5 +1,6 @@
 import type { EsTreeNode, Rule, RuleContext } from "../types.js";
 import { defineRule } from "../utils/define-rule.js";
+import type { EsTreeNodeOfType } from "../utils/es-tree-node-of-type.js";
 import { isComponentAssignment, isUppercaseName } from "../helpers.js";
 import { lowerFunction } from "./lower.js";
 import { inferTypes } from "./infer-types.js";
@@ -44,11 +45,11 @@ export const hirNoSetStateInEffect = defineRule<Rule>({
     };
 
     return {
-      FunctionDeclaration(node: EsTreeNode) {
+      FunctionDeclaration(node: EsTreeNodeOfType<"FunctionDeclaration">) {
         if (!node.id?.name || !isUppercaseName(node.id.name)) return;
         visitComponent(node);
       },
-      VariableDeclarator(node: EsTreeNode) {
+      VariableDeclarator(node: EsTreeNodeOfType<"VariableDeclarator">) {
         if (!isComponentAssignment(node)) return;
         if (!node.init) return;
         visitComponent(node.init);
@@ -78,11 +79,11 @@ export const hirNoDerivedComputationsInEffects = defineRule<Rule>({
     };
 
     return {
-      FunctionDeclaration(node: EsTreeNode) {
+      FunctionDeclaration(node: EsTreeNodeOfType<"FunctionDeclaration">) {
         if (!node.id?.name || !isUppercaseName(node.id.name)) return;
         visitComponent(node);
       },
-      VariableDeclarator(node: EsTreeNode) {
+      VariableDeclarator(node: EsTreeNodeOfType<"VariableDeclarator">) {
         if (!isComponentAssignment(node)) return;
         if (!node.init) return;
         visitComponent(node.init);
